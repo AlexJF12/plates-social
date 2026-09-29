@@ -68,6 +68,16 @@ To go back to plain localhost dev, empty `PUBLIC_URL` and restart.
 
 **Install on iPhone:** open the tunnel URL in Safari → Share → Add to Home Screen → open from the home screen → sign in.
 
+## Lexicons
+
+Record schemas live in `lexicons/com/example/cooklog/*.json`. `com.atproto.repo.strongRef` was fetched with `lex install` and is pinned by CID in `lexicons.json`. After editing any Lexicon JSON, regenerate the TypeScript and commit it:
+
+```sh
+pnpm lex:build    # writes lib/lexicons-gen/ (generated; never edit by hand)
+```
+
+App code imports Lexicons only through `lib/lexicons.ts`.
+
 ## Tests
 
 ```sh

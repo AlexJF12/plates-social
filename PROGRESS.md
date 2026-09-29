@@ -1,7 +1,47 @@
 # Progress
 
-## Current phase: 0 — Setup, login and install ✅ complete (2026-09-29)
+## Current phase: 1 — Lexicons and schema ⏸ checkpoint, awaiting Lexicon review (2026-09-29)
 
+Branch: `feature/phase-1-lexicons`
+
+### Built
+
+- `lexicons/com/example/cooklog/{cook,kudos,comment,follow}.json` per §4, all `tid` keys.
+- `lexicons/com/atproto/repo/strongRef.json` via `lex install` (pinned by CID in `lexicons.json`).
+- `pnpm lex:build` → `lib/lexicons-gen/` (committed; eslint-ignored). `lib/lexicons.ts` is the single re-export (`cook`, `kudos`, `comment`, `follow`, `strongRef`).
+- Migration `002_index`: `account`, `cook`, `kudos`, `comment`, `follow` (timestamptz throughout, no FKs), with indexes for feed cursors, profile feeds, stats, kudos/comment lookups.
+- Kysely types in `lib/db/schema.ts`; `date` columns parsed as `'YYYY-MM-DD'` strings (`lib/db/index.ts`).
+- `lib/lexicons.test.ts`: 29 tests. Valid records and every §4 limit, through `jsonToLex` → `$parse`, as the webhook will do it.
+
+### Decisions not in the spec
+
+- Byte caps alongside grapheme caps (Bluesky convention, 10×): dishName 1000 B, note 10000 B, alt 3000 B, comment 5000 B. A string of 100 ZWJ family emoji (18 B each) would be rejected; normal emoji are fine.
+- `mealType` has `maxLength: 64` so unknown values can't be huge; unknown values are still accepted.
+- `aspectRatio` is its own `#aspectRatio` def with `minimum: 1` on both ints.
+- Generated code is committed (Statusphere gitignores it and builds on `dev`/`build`); committing it means `typecheck`/`test` work on a fresh clone without an extra step. Regeneration verified reproducible (no diff).
+- No foreign keys: Tap can deliver kudos before its cook, or records before identity.
+- Added `comment_author_idx` (account purge) and `kudos_subject_idx` (counts).
+- `pending_login` not created (Phase 0 proved the claim flow unnecessary).
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 35/35.
+- `pnpm migrate` applied `002_index`; `\d` of every table checked. `migrateDown` then `migrate` round-trips cleanly.
+- Kysely round trip under `TZ=America/Los_Angeles` in a rolled-back transaction: `cookedLocalDate` returns `2026-09-29` unchanged, `images` jsonb returns the array.
+- Not applicable this phase: PDS writes, Tap delivery, UI.
+
+### Known issues
+
+- Namespace rename also means moving `lexicons/com/example/cooklog/` and editing the `id`s in the JSON, not only `lib/lexicons.ts` + `lib/config.ts`.
+- Carried from Phase 0: Tap webhook 404s until Phase 3; quick-tunnel URL changes per run; `auth_state` never pruned.
+
+### Next step
+
+Human reviews the Lexicon JSON (records are permanent once written). After sign-off: Phase 2, log a cook (§6.5 client image pipeline, `uploadBlob`, `createRecord`, read-your-own-writes upsert into `cook`, retry, bare "my cooks" list).
+
+---
+
+## Phase 0 — Setup, login and install ✅ complete (2026-09-29)
 Branch: `feature/initial-app-build`
 
 ### Built
@@ -41,7 +81,3 @@ Note for later: iOS copies Safari cookies into a home-screen app at install time
 - Quick-tunnel URL changes each run; `PUBLIC_URL` must be updated and dev restarted.
 - `auth_state` rows for abandoned logins are never pruned (tiny; could add cleanup later).
 - Browser extensions can add attributes to `<body>`; `suppressHydrationWarning` on `<body>` only (app/layout.tsx) silences that dev warning.
-
-### Next step
-
-Phase 1: Lexicons and schema (§4, §6.2). Write the four Lexicon JSON files under `lexicons/`, generate code with `lex build`, add the `lib/lexicons.ts` re-export and additive migration `002`. Checkpoint: show the Lexicon JSON in full for review.
