@@ -1,0 +1,80 @@
+{
+  "lexicon": 1,
+  "id": "com.example.cooklog.cook",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A meal the author cooked, with photos.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["dishName", "mealType", "images", "cookedAt", "createdAt"],
+        "properties": {
+          "dishName": {
+            "type": "string",
+            "description": "What was cooked.",
+            "minGraphemes": 1,
+            "maxGraphemes": 100,
+            "maxLength": 1000
+          },
+          "mealType": {
+            "type": "string",
+            "description": "Kind of meal. Clients should display unrecognised values as 'Other'.",
+            "knownValues": ["breakfast", "lunch", "dinner", "snack", "bread", "bake", "dessert"],
+            "maxLength": 64
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional free-text note about the cook.",
+            "maxGraphemes": 1000,
+            "maxLength": 10000
+          },
+          "images": {
+            "type": "array",
+            "description": "Photos of the cook, in display order.",
+            "minLength": 1,
+            "maxLength": 4,
+            "items": { "type": "ref", "ref": "#image" }
+          },
+          "cookedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When the meal was cooked, in the author's local time with its UTC offset."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When this record was created."
+          }
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "required": ["image", "aspectRatio"],
+      "properties": {
+        "image": {
+          "type": "blob",
+          "accept": ["image/jpeg", "image/webp"],
+          "maxSize": 1000000
+        },
+        "alt": {
+          "type": "string",
+          "description": "Alt text describing the photo.",
+          "maxGraphemes": 300,
+          "maxLength": 3000
+        },
+        "aspectRatio": { "type": "ref", "ref": "#aspectRatio" }
+      }
+    },
+    "aspectRatio": {
+      "type": "object",
+      "description": "Width and height of the image, used to reserve layout space before it loads. Only the ratio matters.",
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}

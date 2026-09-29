@@ -6,13 +6,14 @@ Full brief: `SPEC.md`. Current status and next step: `PROGRESS.md` (read it firs
 
 ## Commands
 
-Node 22 is required (`nvm use` picks it up from `.nvmrc`; Node 24 breaks Next.js). pnpm via corepack.
+Node 22 is required (`nvm use` picks it up from `.nvmrc`; Node 24 breaks Next.js). pnpm via corepack. In a non-interactive shell (Claude's Bash tool), `pnpm` isn't on PATH until you run `source ~/.nvm/nvm.sh && nvm use`.
 
 | What | Command |
 |---|---|
 | Install | `pnpm install` |
 | Postgres (Docker) up / down | `pnpm db:up` / `pnpm db:down` |
 | Migrations | `pnpm migrate` |
+| Regenerate Lexicon code (after editing `lexicons/`) | `pnpm lex:build` |
 | Dev server (http://127.0.0.1:3000) | `pnpm dev` |
 | Tap (needs `go install github.com/bluesky-social/indigo/cmd/tap@latest`) | `pnpm tap` |
 | HTTPS tunnel for phone testing | `cloudflared tunnel --url http://127.0.0.1:3000` (then set `PUBLIC_URL`, restart dev) |
@@ -31,6 +32,9 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - `pnpm dev` binds to 127.0.0.1; `pnpm` 12 has no `-s` flag.
 - Scripts that import `@atproto/oauth-client-node` must be `.mts` (it pulls ESM-only `multiformats`).
 - pnpm 12 blocks unapproved install scripts; decisions live in `pnpm-workspace.yaml` `allowBuilds`.
+- Generated Lexicon code is committed in `lib/lexicons-gen/`; import it only via `lib/lexicons.ts`. Tap records are JSON, so run `jsonToLex` before `$parse` (see `lib/lexicons.test.ts`).
+- `cook.images` is jsonb: insert `JSON.stringify(images)` (pg would send a JS array as a Postgres array). `date` columns come back as `'YYYY-MM-DD'` strings (type parser in `lib/db/index.ts`).
+- Throwaway scripts with top-level await must be `.mts`.
 
 ---
 
