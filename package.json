@@ -1,0 +1,51 @@
+{
+  "name": "plates-social",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:up": "docker compose up -d --wait postgres",
+    "db:down": "docker compose down",
+    "migrate": "tsx --env-file=.env.local scripts/migrate.ts",
+    "gen-key": "tsx scripts/gen-key.mts",
+    "gen-icons": "tsx scripts/gen-icons.ts",
+    "tap": "scripts/tap.sh"
+  },
+  "dependencies": {
+    "@atproto/common-web": "^0.5.12",
+    "@atproto/lex": "^0.3.12",
+    "@atproto/oauth-client-node": "^0.5.7",
+    "@atproto/syntax": "^0.7.6",
+    "@atproto/tap": "^0.4.10",
+    "kysely": "^0.29.6",
+    "next": "16.3.6",
+    "pg": "^8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^22.20.4",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.6",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "^5",
+    "vitest": "^5.0.2"
+  },
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22 <23"
+  }
+}

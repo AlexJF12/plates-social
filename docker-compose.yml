@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: cooklog
+      POSTGRES_PASSWORD: cooklog
+      POSTGRES_DB: cooklog
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cooklog -d cooklog"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
