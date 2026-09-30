@@ -12,12 +12,13 @@ export async function GET(request: NextRequest) {
   if (author !== null && !isValidDid(author)) {
     return NextResponse.json({ error: "Invalid author" }, { status: 400 });
   }
+  // The viewer (if signed in) gets viewerKudos on each cook.
+  const viewer = await getDid();
   let followedBy: string | undefined;
   if (params.get("feed") === "following") {
-    const did = await getDid();
-    if (!did) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    followedBy = did;
+    if (!viewer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    followedBy = viewer;
   }
-  const page = await getCookFeed({ authorDid: author ?? undefined, followedBy, cursor: params.get("cursor") });
+  const page = await getCookFeed({ authorDid: author ?? undefined, followedBy, viewer, cursor: params.get("cursor") });
   return NextResponse.json(page, { headers: { "Cache-Control": "no-store" } });
 }

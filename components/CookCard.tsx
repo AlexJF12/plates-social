@@ -1,17 +1,17 @@
-import { ChefHat, MessageCircle } from "lucide-react";
 import Link from "next/link";
 import { mealTypeLabel } from "@/lib/cook/mealTypes";
 import type { CookView } from "@/lib/db/queries";
 import { cookPath, displayName, profilePath } from "@/lib/links";
 import { Avatar } from "./Avatar";
 import { BestBadge } from "./BestBadge";
+import { CardActions } from "./CardActions";
 import { PhotoCarousel } from "./PhotoCarousel";
 import { TimeAgo } from "./TimeAgo";
 
 // One cook in a feed (§7): author and meal, photos edge to edge, the dish in
-// the display serif, the note (3 lines), kudos and comment counts. Cards are
-// separated by a sunken band rather than hairlines.
-export function CookCard({ cook }: { cook: CookView }) {
+// the display serif, the note (3 lines), then the kudos toggle and comment
+// count (CardActions). Cards are separated by a sunken band, not hairlines.
+export function CookCard({ cook, viewerDid }: { cook: CookView; viewerDid: string }) {
   const href = cookPath(cook.author.did, cook.rkey);
   return (
     <article className="border-b-8 border-sunken bg-background" data-testid="cook-card">
@@ -31,28 +31,12 @@ export function CookCard({ cook }: { cook: CookView }) {
         </div>
       </header>
       <PhotoCarousel did={cook.author.did} images={cook.images} />
-      <Link href={href} className="block px-4 pt-4 pb-3 active:opacity-80">
+      <Link href={href} className="block px-4 pt-4 active:opacity-80">
         {cook.badge && <BestBadge badge={cook.badge} className="mb-1.5" />}
         <h2 className="font-display text-dish text-balance break-words">{cook.dishName}</h2>
         {cook.note && <p className="mt-2 line-clamp-3 text-body break-words whitespace-pre-line">{cook.note}</p>}
-        <CookCounts kudos={cook.kudosCount} comments={cook.commentCount} />
       </Link>
+      <CardActions cook={cook} href={href} canGive={cook.author.did !== viewerDid} />
     </article>
-  );
-}
-
-function CookCounts({ kudos, comments }: { kudos: number; comments: number }) {
-  const label = `${kudos} kudos, ${comments} ${comments === 1 ? "comment" : "comments"}`;
-  return (
-    <p className="mt-3 flex items-center gap-5 text-small font-medium text-muted" aria-label={label}>
-      <span className="inline-flex items-center gap-1.5" aria-hidden>
-        <ChefHat size={20} strokeWidth={1.8} />
-        {kudos > 0 && <span className="tabular-nums">{kudos}</span>}
-      </span>
-      <span className="inline-flex items-center gap-1.5" aria-hidden>
-        <MessageCircle size={20} strokeWidth={1.8} />
-        {comments > 0 && <span className="tabular-nums">{comments}</span>}
-      </span>
-    </p>
   );
 }
