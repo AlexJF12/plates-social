@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Author } from "@/lib/db/queries";
 import { displayName } from "@/lib/links";
 import { Avatar } from "./Avatar";
+import { EmptyState, ErrorText, button } from "./ui";
 
 type Load = { state: "loading" } | { state: "error" } | { state: "ready"; candidates: Author[] };
 
@@ -71,29 +72,44 @@ export function ImportFollows({ first }: { first: boolean }) {
   const skipHref = first ? "/global" : null;
 
   if (load.state === "loading") {
-    return <p className="px-6 py-16 text-center text-sm text-muted">Looking up who you follow on Bluesky…</p>;
+    return (
+      <div aria-busy="true">
+        <p className="px-4 pt-2 pb-3 text-body text-muted">Looking up who you follow on Bluesky…</p>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex min-h-16 items-center gap-3 px-4 py-2">
+            <span className="h-11 w-11 rounded-full bg-border motion-safe:animate-pulse" />
+            <span className="h-4 w-40 rounded bg-border motion-safe:animate-pulse" />
+          </div>
+        ))}
+      </div>
+    );
   }
   if (load.state === "error") {
     return (
-      <div className="px-6 py-16 text-center">
-        <p className="font-semibold">Couldn&apos;t load your Bluesky follows</p>
-        <button type="button" onClick={fetchCandidates} className="mt-3 h-11 px-4 font-medium text-accent">
-          Retry
-        </button>
-      </div>
+      <EmptyState
+        title="Couldn't load your Bluesky follows"
+        actions={
+          <button type="button" onClick={fetchCandidates} className={button()}>
+            Try again
+          </button>
+        }
+      >
+        Check your connection, then try again.
+      </EmptyState>
     );
   }
   if (load.candidates.length === 0) {
     return (
-      <div className="px-6 py-16 text-center">
-        <p className="font-semibold">No one new to follow</p>
-        <p className="mt-1 text-sm text-muted">
-          Nobody you follow on Bluesky has logged a cook here yet, or you already follow them.
-        </p>
-        <Link href="/global" className="mt-4 inline-flex h-11 items-center px-5 font-medium text-accent">
-          Browse the global feed
-        </Link>
-      </div>
+      <EmptyState
+        title="No one new to follow"
+        actions={
+          <Link href="/global" className={button({ variant: "secondary" })}>
+            Browse the global feed
+          </Link>
+        }
+      >
+        Nobody you follow on Bluesky has logged a cook here yet, or you already follow them.
+      </EmptyState>
     );
   }
 
@@ -109,43 +125,39 @@ export function ImportFollows({ first }: { first: boolean }) {
 
   return (
     <>
-      <p className="px-4 pt-4 pb-2 text-sm text-muted">
+      <p className="px-4 pt-2 pb-3 text-body text-pretty text-muted">
         {candidates.length === 1 ? "1 person" : `${candidates.length} people`} you follow on Bluesky{" "}
         {candidates.length === 1 ? "cooks" : "cook"} here.
       </p>
       <ul>
         {candidates.map((c) => (
           <li key={c.did}>
-            <label className="flex min-h-14 cursor-pointer items-center gap-3 px-4 py-2">
-              <Avatar author={c} size={40} />
+            <label className="flex min-h-16 cursor-pointer items-center gap-3 px-4 py-2 active:bg-sunken">
+              <Avatar author={c} size={44} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate font-semibold">{displayName(c)}</span>
-                {c.handle && <span className="block truncate text-sm text-muted">@{c.handle}</span>}
+                <span className="block truncate text-body font-semibold">{displayName(c)}</span>
+                {c.handle && <span className="block truncate text-small text-muted">@{c.handle}</span>}
               </span>
               <input
                 type="checkbox"
                 checked={selected.has(c.did)}
                 onChange={() => toggle(c.did)}
                 disabled={saving}
-                className="h-5 w-5 shrink-0 accent-accent"
+                className="h-6 w-6 shrink-0 accent-accent"
                 aria-label={`Follow ${displayName(c)}`}
               />
             </label>
           </li>
         ))}
       </ul>
-      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] border-t border-border bg-background/95 px-4 py-3 backdrop-blur">
-        {submit.state === "error" && (
-          <p role="alert" className="mb-2 text-sm text-red-600">
-            {submit.message}
-          </p>
-        )}
+      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] border-t border-border bg-background/90 px-4 py-3 backdrop-blur-md">
+        {submit.state === "error" && <ErrorText className="mb-2">{submit.message}</ErrorText>}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={followSelected}
             disabled={saving || selected.size === 0}
-            className="h-11 flex-1 rounded-lg bg-accent px-5 font-semibold text-accent-foreground disabled:opacity-50"
+            className={`${button()} flex-1`}
           >
             {saving
               ? "Following…"
@@ -156,7 +168,7 @@ export function ImportFollows({ first }: { first: boolean }) {
                   : `Follow ${selected.size}`}
           </button>
           {skipHref && (
-            <Link href={skipHref} className="flex h-11 items-center px-4 font-medium text-muted">
+            <Link href={skipHref} className={button({ variant: "subtle" })}>
               Skip
             </Link>
           )}

@@ -1,11 +1,13 @@
 "use client";
 
+import { ChefHat } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { TID } from "@atproto/common-web";
 import type { Author } from "@/lib/db/queries";
 import { displayName, profilePath } from "@/lib/links";
 import { Avatar } from "./Avatar";
+import { ErrorText, button } from "./ui";
 
 // Kudos on a cook: the count, who gave them, and the viewer's toggle (§6.6).
 // Like FollowButton, the toggle only flips once the server confirms the
@@ -52,42 +54,44 @@ export function CookKudos({
     }
   }
 
+  const shown = kudos.slice(0, 8);
+
   return (
-    <section className="mt-6 border-t border-border px-4 pt-4" aria-labelledby="kudos-h">
-      <div className="flex items-center justify-between gap-3">
-        <h3 id="kudos-h" className="text-sm font-semibold" data-testid="kudos-count">
-          {kudos.length} kudos
-        </h3>
+    <section className="border-t-8 border-sunken px-4 py-5" aria-labelledby="kudos-h">
+      <div className="flex min-h-11 items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 id="kudos-h" className="text-body font-semibold" data-testid="kudos-count">
+            {kudos.length} kudos
+          </h3>
+          {kudos.length > 0 && (
+            <ul className="mt-2 flex -space-x-2">
+              {shown.map((k) => (
+                <li key={k.did} className="rounded-full ring-2 ring-background">
+                  <Link href={profilePath(k)} title={displayName(k)} aria-label={displayName(k)}>
+                    <Avatar author={k} size={32} />
+                  </Link>
+                </li>
+              ))}
+              {kudos.length > shown.length && (
+                <li className="flex h-8 items-center pl-4 text-small text-muted">+{kudos.length - shown.length}</li>
+              )}
+            </ul>
+          )}
+        </div>
         {canGive && (
           <button
             type="button"
             onClick={toggle}
             disabled={pending}
             aria-pressed={given}
-            className={`h-11 min-w-32 rounded-lg px-4 text-sm font-semibold disabled:opacity-60 ${
-              given ? "border border-accent text-accent" : "bg-accent text-accent-foreground"
-            }`}
+            className={`${button({ variant: given ? "selected" : "primary" })} min-w-36`}
           >
+            <ChefHat size={20} strokeWidth={2} fill={given ? "currentColor" : "none"} fillOpacity={0.2} aria-hidden />
             {pending ? "Saving…" : given ? "Kudos given" : "Give kudos"}
           </button>
         )}
       </div>
-      {error && (
-        <p role="alert" className="mt-1 text-xs text-red-600">
-          {error}
-        </p>
-      )}
-      {kudos.length > 0 && (
-        <ul className="mt-2 flex flex-wrap gap-1">
-          {kudos.map((k) => (
-            <li key={k.did}>
-              <Link href={profilePath(k)} title={displayName(k)} aria-label={displayName(k)}>
-                <Avatar author={k} size={28} />
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      {error && <ErrorText className="mt-2">{error}</ErrorText>}
     </section>
   );
 }

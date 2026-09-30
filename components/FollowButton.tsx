@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { TID } from "@atproto/common-web";
+import { ErrorText, button } from "./ui";
 
 // Follow / unfollow on a profile (§6.3). The button only flips once the
 // server confirms the write reached the PDS (§7: failed writes must never
@@ -35,22 +36,17 @@ export function FollowButton({ subject, initialFollowing }: { subject: string; i
   }
 
   return (
-    <div>
+    <div className="w-full">
       <button
         type="button"
         onClick={toggle}
         disabled={pending}
-        className={`h-11 min-w-28 rounded-lg px-5 text-sm font-semibold disabled:opacity-60 ${
-          following ? "border border-border" : "bg-accent text-accent-foreground"
-        }`}
+        aria-pressed={following}
+        className={button({ variant: following ? "selected" : "primary", full: true })}
       >
         {pending ? "Saving…" : following ? "Following" : "Follow"}
       </button>
-      {error && (
-        <p role="alert" className="mt-1 text-xs text-red-600">
-          {error}
-        </p>
-      )}
+      {error && <ErrorText className="mt-2">{error}</ErrorText>}
     </div>
   );
 }

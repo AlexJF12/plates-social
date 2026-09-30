@@ -1,9 +1,14 @@
 import type { Metadata, Viewport } from "next";
+import { Young_Serif } from "next/font/google";
 import { InstallHint } from "@/components/InstallHint";
 import { ServiceWorker } from "@/components/ServiceWorker";
 import { APP_NAME, THEME } from "@/lib/config";
 import { CAPTURE_INSTALL_PROMPT } from "@/lib/installPrompt";
 import "./globals.css";
+
+// Display face (dish names, titles, stats). Self-hosted by next/font: no
+// requests to Google from the browser.
+const display = Young_Serif({ weight: "400", subsets: ["latin"], variable: "--font-young-serif" });
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -30,7 +35,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className="h-full antialiased">
+    <html lang="en" className={`${display.variable} h-full antialiased`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: CAPTURE_INSTALL_PROMPT }} />
       </head>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { TID } from "@atproto/common-web";
@@ -8,6 +9,7 @@ import { displayName, profilePath } from "@/lib/links";
 import { Avatar } from "./Avatar";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { TimeAgo } from "./TimeAgo";
+import { ErrorText, button, input } from "./ui";
 
 const MAX_GRAPHEMES = 500; // §4
 const MAX_BYTES = 5000; // Lexicon maxLength (UTF-8 bytes)
@@ -119,29 +121,33 @@ export function CookComments({
   }
 
   return (
-    <section className="mt-6 border-t border-border px-4 pt-4" aria-labelledby="comments-h">
-      <h3 id="comments-h" className="text-sm font-semibold" data-testid="comment-count">
-        {count} {count === 1 ? "comment" : "comments"}
+    <section className="border-t-8 border-sunken px-4 pt-5" aria-labelledby="comments-h">
+      <h3 id="comments-h" className="flex items-baseline gap-2" data-testid="comment-count">
+        <span className="font-display text-dish">Comments</span>
+        {count > 0 && <span className="text-body text-muted tabular-nums">{count}</span>}
+        <span className="sr-only">
+          {count} {count === 1 ? "comment" : "comments"}
+        </span>
       </h3>
       {items.length === 0 ? (
-        <p className="mt-2 text-sm text-muted">No comments yet.</p>
+        <p className="mt-2 text-body text-muted">No comments yet. Say something nice.</p>
       ) : (
-        <ul className="mt-3 space-y-4">
+        <ul className="mt-4 space-y-5">
           {items.map((c) => (
             <li key={c.uri} className="flex gap-3" data-testid="comment">
               <Link href={profilePath(c.author)} className="shrink-0">
-                <Avatar author={c.author} size={32} />
+                <Avatar author={c.author} size={36} />
               </Link>
               <div className="min-w-0 flex-1">
-                <p className="text-sm">
-                  <Link href={profilePath(c.author)} className="font-semibold">
+                <p className="flex items-baseline gap-2 text-small">
+                  <Link href={profilePath(c.author)} className="truncate font-semibold">
                     {displayName(c.author)}
-                  </Link>{" "}
-                  <span className="text-muted">
+                  </Link>
+                  <span className="shrink-0 text-muted">
                     <TimeAgo iso={c.sortAt} />
                   </span>
                 </p>
-                <p className="text-[15px] break-words whitespace-pre-line">{c.text}</p>
+                <p className="mt-0.5 text-body break-words whitespace-pre-line">{c.text}</p>
               </div>
               {c.author.did === viewerDid && (
                 <button
@@ -150,10 +156,10 @@ export function CookComments({
                     setDeleteError(null);
                     setConfirming(c);
                   }}
-                  className="-mt-2 -mr-2 h-11 shrink-0 px-2 text-xs text-muted"
+                  className="-mt-3 -mr-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-sunken"
                   aria-label="Delete comment"
                 >
-                  Delete
+                  <Trash2 size={17} strokeWidth={1.8} aria-hidden />
                 </button>
               )}
             </li>
@@ -161,48 +167,42 @@ export function CookComments({
         </ul>
       )}
       {cursor && (
-        <div ref={sentinel} className="flex min-h-12 items-center justify-center text-sm text-muted">
+        <div ref={sentinel} className="flex min-h-12 items-center justify-center text-small text-muted">
           {loadState === "loading" && "Loading…"}
           {loadState === "error" && (
-            <button type="button" onClick={loadMore} className="h-11 px-4 text-accent">
+            <button type="button" onClick={loadMore} className={button({ variant: "quiet" })}>
               Couldn&apos;t load more. Retry
             </button>
           )}
         </div>
       )}
 
-      <form onSubmit={post} className="mt-5" aria-label="Add a comment">
+      <form onSubmit={post} className="mt-6 pb-2" aria-label="Add a comment">
         <label htmlFor="comment-text" className="sr-only">
           Add a comment
         </label>
-        <textarea
-          id="comment-text"
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
-            rkey.current = null; // new text = a new comment
-          }}
-          rows={2}
-          placeholder="Add a comment"
-          className="block w-full resize-y rounded-lg border border-border bg-surface px-3 py-2 text-base"
-        />
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <span className={`text-xs ${tooLong ? "text-red-600" : "text-muted"}`}>
-            {length > MAX_GRAPHEMES - 100 ? `${length}/${MAX_GRAPHEMES}` : ""}
-          </span>
-          <button
-            type="submit"
-            disabled={length === 0 || tooLong || posting}
-            className="h-11 rounded-lg bg-accent px-5 text-sm font-semibold text-accent-foreground disabled:opacity-50"
-          >
+        <div className="flex items-end gap-2">
+          <textarea
+            id="comment-text"
+            value={text}
+            onChange={(e) => {
+              setText(e.target.value);
+              rkey.current = null; // new text = a new comment
+            }}
+            rows={1}
+            placeholder="Add a comment"
+            className={`${input} block max-h-40 min-h-11 resize-none py-2.5 [field-sizing:content]`}
+          />
+          <button type="submit" disabled={length === 0 || tooLong || posting} className={button()}>
             {posting ? "Posting…" : postError ? "Retry" : "Post"}
           </button>
         </div>
-        {postError && (
-          <p role="alert" className="mt-1 text-xs text-red-600">
-            {postError}
+        {length > MAX_GRAPHEMES - 100 && (
+          <p className={`mt-1 text-caption tabular-nums ${tooLong ? "text-danger" : "text-muted"}`}>
+            {length}/{MAX_GRAPHEMES}
           </p>
         )}
+        {postError && <ErrorText className="mt-1">{postError}</ErrorText>}
       </form>
 
       <ConfirmDialog
@@ -213,12 +213,8 @@ export function CookComments({
         onConfirm={confirmDelete}
         onCancel={() => setConfirming(null)}
       >
-        It will be removed from your repository.
-        {deleteError && (
-          <span role="alert" className="mt-2 block text-red-600">
-            {deleteError}
-          </span>
-        )}
+        It will be removed from your account.
+        {deleteError && <ErrorText className="mt-2">{deleteError}</ErrorText>}
       </ConfirmDialog>
     </section>
   );

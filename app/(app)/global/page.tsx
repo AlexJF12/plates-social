@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CookFeed } from "@/components/CookFeed";
-import { PageHeader } from "@/components/PageHeader";
+import { FeedHeader } from "@/components/FeedHeader";
+import { EmptyState, button } from "@/components/ui";
 import { getDid } from "@/lib/auth/session";
 import { getCookFeed } from "@/lib/db/queries";
 
@@ -12,18 +13,21 @@ export default async function GlobalPage() {
 
   return (
     <>
-      <PageHeader title="Global" />
+      <FeedHeader current="/global" />
       <main className="mx-auto w-full max-w-md">
         <CookFeed
           initial={initial}
           empty={
-            <div className="px-6 py-16 text-center">
-              <p className="font-semibold">No cooks yet</p>
-              <p className="mt-1 text-sm text-muted">Be the first to log what you made.</p>
-              <Link href="/log" className="mt-4 inline-flex h-11 items-center rounded-lg bg-accent px-5 font-semibold text-accent-foreground">
-                Log a cook
-              </Link>
-            </div>
+            <EmptyState
+              title="No cooks yet"
+              actions={
+                <Link href="/log" className={button()}>
+                  Log a cook
+                </Link>
+              }
+            >
+              Be the first to log what you made.
+            </EmptyState>
           }
         />
       </main>

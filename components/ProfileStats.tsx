@@ -19,19 +19,19 @@ export function ProfileStats({ days }: { days: DayCount[] }) {
   const today = useSyncExternalStore(subscribe, getToday, getServerToday);
   const stats = today ? countStats(days, today) : null;
   const items = [
-    { label: "This week", value: stats?.week },
-    { label: "This month", value: stats?.month },
+    { label: "this week", value: stats?.week },
+    { label: "this month", value: stats?.month },
   ];
 
+  // Strava-style figures: big serif numbers, a small label underneath.
   return (
-    <dl className="grid grid-cols-2 gap-3 px-4 pb-4" data-testid="profile-stats">
-      {items.map((s) => (
-        <div key={s.label} className="rounded-xl border border-border bg-surface px-4 py-3">
-          <dt className="text-xs font-medium text-muted">{s.label}</dt>
-          <dd className="mt-0.5 text-2xl font-bold tabular-nums">
-            {s.value ?? <span className="text-muted">–</span>}
-            <span className="sr-only"> {s.value === 1 ? "cook" : "cooks"}</span>
-          </dd>
+    <dl className="flex px-4 pb-5" data-testid="profile-stats">
+      {items.map((s, i) => (
+        <div key={s.label} className={`flex flex-1 flex-col-reverse ${i > 0 ? "border-l border-border pl-5" : ""}`}>
+          <dt className="mt-1.5 text-small text-muted">
+            {s.value === 1 ? "cook" : "cooks"} {s.label}
+          </dt>
+          <dd className="font-display text-stat tabular-nums">{s.value ?? <span className="text-muted">–</span>}</dd>
         </div>
       ))}
     </dl>

@@ -4,7 +4,7 @@
 // cached: the one cached response is /offline, which holds no user data.
 // Bump CACHE when /offline changes.
 
-const CACHE = "offline-v1";
+const CACHE = "offline-v2";
 const OFFLINE_URL = "/offline";
 
 self.addEventListener("install", (event) => {

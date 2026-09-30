@@ -12,14 +12,14 @@ export function Avatar({ author, size }: { author: Author; size: number }) {
         src={imageUrl(author.did, author.avatarCid, "avatar")}
         alt=""
         style={style}
-        className="shrink-0 rounded-full bg-border object-cover"
+        className="shrink-0 rounded-full bg-sunken object-cover"
       />
     );
   }
   return (
     <span
       style={{ ...style, fontSize: size * 0.45 }}
-      className="flex shrink-0 items-center justify-center rounded-full bg-border font-semibold text-muted uppercase"
+      className="flex shrink-0 items-center justify-center rounded-full bg-accent-soft font-display text-accent uppercase"
       aria-hidden
     >
       {displayName(author).replace(/^did:\w+:/, "").charAt(0)}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CookView, FeedPage } from "@/lib/db/queries";
 import { CookCard } from "./CookCard";
+import { button } from "./ui";
 
 // Infinite scroll over /api/feed (§6.2). The first page is rendered on the
 // server and passed in; later pages load as the sentinel nears the viewport.
@@ -63,14 +64,14 @@ export function CookFeed({
       {items.map((c) => (
         <CookCard key={c.uri} cook={c} />
       ))}
-      <div ref={sentinel} className="flex min-h-16 items-center justify-center py-4 text-sm text-muted">
+      <div ref={sentinel} className="flex min-h-20 items-center justify-center py-6 text-small text-muted">
         {state === "loading" && "Loading…"}
         {state === "error" && (
-          <button type="button" onClick={loadMore} className="h-11 px-4 text-accent">
+          <button type="button" onClick={loadMore} className={button({ variant: "quiet" })}>
             Couldn&apos;t load more. Retry
           </button>
         )}
-        {!cursor && items.length > 3 && "That's everything."}
+        {!cursor && items.length > 3 && "You're all caught up."}
       </div>
     </div>
   );

@@ -20,7 +20,7 @@
           "mealType": {
             "type": "string",
             "description": "Kind of meal. Clients should display unrecognised values as 'Other'.",
-            "knownValues": ["breakfast", "lunch", "dinner", "snack", "bread", "bake", "dessert"],
+            "knownValues": ["breakfast", "lunch", "dinner", "snack", "bread", "dessert"],
             "maxLength": 64
           },
           "note": {

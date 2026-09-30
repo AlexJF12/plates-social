@@ -11,7 +11,7 @@ export default async function ImportPage({ searchParams }: PageProps<"/import">)
 
   return (
     <>
-      <PageHeader title="Follow people from Bluesky" back={!first} />
+      <PageHeader title="Find people" back={!first} />
       <main className="mx-auto w-full max-w-md">
         <ImportFollows first={first} />
       </main>

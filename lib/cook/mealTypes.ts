@@ -6,7 +6,6 @@ export const MEAL_TYPES = [
   { value: "dinner", label: "Dinner" },
   { value: "snack", label: "Snack" },
   { value: "bread", label: "Bread" },
-  { value: "bake", label: "Bake" },
   { value: "dessert", label: "Dessert" },
 ] as const;
 

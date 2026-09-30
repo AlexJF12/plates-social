@@ -28,7 +28,6 @@ type Main = {
     | 'dinner'
     | 'snack'
     | 'bread'
-    | 'bake'
     | 'dessert'
     | l.UnknownString
 
@@ -66,15 +65,7 @@ const main = /*#__PURE__*/ l.record<'tid', Main>(
       maxLength: 1000,
     }),
     mealType: /*#__PURE__*/ l.string<{
-      knownValues: [
-        'breakfast',
-        'lunch',
-        'dinner',
-        'snack',
-        'bread',
-        'bake',
-        'dessert',
-      ]
+      knownValues: ['breakfast', 'lunch', 'dinner', 'snack', 'bread', 'dessert']
       maxLength: 64
     }>({ maxLength: 64 }),
     note: /*#__PURE__*/ l.optional(
