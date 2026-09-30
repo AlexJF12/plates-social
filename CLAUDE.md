@@ -54,7 +54,10 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Error boundaries in this Next get `retry` (not `reset`). A non-component export from a `"use client"` file becomes a client reference on the server: put shared constants in a plain module.
 - With a route `loading.tsx`, `redirect()` in the page happens mid-stream (200 + meta refresh); sign-in redirects belong in `(app)/layout.tsx` too.
 - The service worker caches only `/offline`; bump `CACHE` in `public/sw.js` when that page changes. Playwright's iPhone UA shows the iOS install hint: set `localStorage.installHintDismissed = "1"` via `addInitScript` for screenshots.
-- Next's dev "N" indicator covers the Following tab at 375px: in Playwright use `dispatchEvent("click")` there.
+- Next's dev "N" indicator sits over the left tab (Feed) at 375px: in Playwright use `dispatchEvent("click")` there.
+- UI styling goes through the tokens in `app/globals.css` and the primitives in `components/ui.tsx` (§7). Tailwind's default text sizes are off (`--text-*: initial`): `text-sm` etc. silently do nothing, use `text-small`/`text-body`/…
+- Don't stack a second color/background/weight class onto `button()` output to override it (which wins depends on CSS order, not class order): add a variant instead.
+- In screenshot scripts, never change DOM attributes (e.g. `img.loading`) before hydration: React logs a hydration mismatch. Scroll through the page to load lazy images, and bound any `img.decode()` wait.
 - To see loading/error states for real: `docker pause` (skeletons) / `docker stop` (error boundary) the Postgres container, then restart it.
 
 ---

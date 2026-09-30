@@ -1,6 +1,84 @@
 # Progress
 
-## Current phase: 6 — Stats and polish ⏸ checkpoint, awaiting the device walkthrough (2026-09-29)
+## Current phase: 6.5 — UI and UX review ✅ approved by the human on the iPhone, PR open (2026-09-30)
+
+Branch: `feature/phase-6.5-ui` (from main after PR #7). Spec: SPEC §8 Phase 6.5; §7 rewritten to describe what was built.
+
+### Audit (before)
+
+- **Identity:** the system font in bold everywhere; the app name, page titles and dish names looked the same. Nothing said "cooking".
+- **Hierarchy:** the meal type was a tiny all-caps grey label; counts were flat, untappable text ("1 kudos · 1 comment"); only hairlines separated cards; the header title was small and weak.
+- **Cook detail:** the dish name appeared twice (truncated in the header and again below). "Delete cook" sat above kudos with the same weight. The comment box showed a resize grip.
+- **Profile:** the name appeared twice; the stats were small numbers in generic boxed tiles; "Find people" and "Sign out" had equal weight.
+- **Log:** the dashed photo box took half the screen before the form started.
+- **Sign-in:** a lone bold word low on the page, and the disabled button was pale orange.
+- **Dark mode:** an inversion; the empty-state button had dark text on bright orange.
+
+### Built
+
+- **Tokens** (`app/globals.css`): paper/ink palette with one basil-green accent, plus `surface`, `sunken`, `muted`, `border`, `accent-soft`, `danger`, light and dark (all text pairs WCAG AA, checked). A named type scale replaces Tailwind's default sizes (`--text-*: initial`), and there are radii `control`/`sheet`. `THEME` (`lib/config.ts`) has the new backgrounds/accent plus `muted`/`accentForeground` for the offline page.
+- **Type:** Young Serif via `next/font/google` (self-hosted at build, `--font-young-serif` → `font-display`) for the wordmark, titles, dish names, section titles, stat figures and empty-state headings. The system sans for the rest.
+- **Icons:** `lucide-react` (new dependency, the only one besides the font).
+- **Primitives** (`components/ui.tsx`, a plain module): `button()` variants primary/secondary/selected/quiet/subtle/danger/destructive, `chip()`, `input`, `FieldLabel`, `ErrorText`, `EmptyState`. `PageHeader` gained an `action` slot.
+- **Every screen restyled:** sign-in, feeds and cards, carousel dots, cook detail, kudos, comments, confirm dialog, profile and stats, follow/sign-out, log form (empty and with photos), import (skeleton rows while loading), tab bar, install hint, empty/error/not-found states, skeletons (match the new layouts), and the offline page (inline CSS from `THEME`; `CACHE` bumped to `offline-v2`).
+
+### UX fixes (all within §2.1, no new routes or API changes)
+
+1. Meal type moves into the author row ("Dinner, 11h ago") instead of an all-caps label; `TimeAgo` has a `long` form.
+2. Kudos/comment counts are icons (chef's hat, speech bubble) with numbers, with an accessible label.
+3. Cook detail: no duplicate dish name in the header; delete is a quiet trash icon in the header instead of a button above kudos.
+4. Kudos: overlapping avatar stack (first 8, then "+N"); the toggle is a filled button → "Kudos given" in the selected style.
+5. Comments: a one-line composer that grows with the text (`field-sizing: content`, capped), Post button inline, no resize grip; delete is a trash icon (44px target).
+6. Profile: name once; stats as big figures ("2 / cooks this week", singular "cook"); "Find people from Bluesky" is full width, "Sign out" a quiet text button.
+7. Log: a smaller camera tile ("Add photos / Take one or choose up to 4"); after picking, a 2-column grid with small × badges (44px hit areas) and an "Add more, 3 of 4" tile; a placeholder in the note field; header "Log a cook" with Cancel on the right.
+8. Sign-in: wordmark at the top, a one-line description, the form at the bottom within thumb reach, and a line saying any atproto account works.
+9. Copy: import header "Find people"; following empty state "Follow people to fill this feed"; feed end "You're all caught up."; error page "This page didn't load"; the label is "Your Bluesky handle".
+10. Pressed states on every button/link/tab (scale or tint, `motion-safe`), and a visible focus ring.
+11. **"Bake" meal type removed** (human's request): gone from the log chips, `MEAL_TYPES`, the Lexicon `knownValues` (`cook.json`, code regenerated with `pnpm lex:build`) and SPEC §4. Safe because the Lexicon isn't published yet (`NS` is still `com.example`) and no indexed cook used it. `knownValues` is open, so a record from elsewhere that says `bake` still validates and shows as "Other".
+
+**Proposed, not built (needs an API change, so flagged per the phase rules):** a kudos button on feed cards. `getCookFeed` / `GET /api/feed` would need a per-viewer `viewerKudos` flag (a left join on `kudos`); the button would reuse `/api/kudos` and the same confirm-then-flip pattern as `CookKudos`.
+
+### Decisions not in the spec
+
+- Accent is **basil green** (the orange placeholder icons are left for Phase 7, per the phase rules, so the home-screen icon is still orange for now).
+- Young Serif is single-weight (400); hierarchy comes from size. The offline page uses Georgia (it can't load the web font offline).
+- Tab bar is **three tabs, Feed / Log / Profile** (human: three or five, Log in the middle; five would need out-of-scope features). Following and Global are one Feed tab with a segmented switch in the header (`components/FeedHeader.tsx`, `lib/feeds.ts`); they stay separate routes, so the manifest `start_url`, links and tests are unchanged. The Feed tab reopens the last-used feed (`localStorage.lastFeed`, default Following). The switch's segments are 44px tall; the page `h1` is screen-reader-only.
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 111/111. `pnpm test:e2e`: 12/12 (two `phase0` selectors updated for the deliberate label change "Your Bluesky handle"; the alert lookup is now scoped to the form).
+- Playwright at 375px, light + dark, signed in with a minted cookie, with local-only fixture rows: every screen captured before and after (29 each, plus desktop 1280, plus the log form with 3 photos picked). No unexpected horizontal scroll, no console errors. The earlier "1 Issue" dev overlay was traced to the screenshot script mutating `<img loading>` before hydration, not the app; fixed in the script.
+- Write states with the API **stubbed in Playwright** (nothing sent to the PDS): kudos → "Saving…" → failure shows the error and the button stays un-pressed → retry → "Kudos given", count 2; comment post failure → error + Retry, text kept; delete dialog opens. No PDS writes this phase (nothing new writes records).
+- A grep confirms no leftover Tailwind default sizes, `red-600`, `rounded-lg/xl` in `app/` or `components/`.
+- **Not verified:** real iPhone / installed PWA (human step below); Android.
+
+### Review (human)
+
+- Before/after contact sheet: `contact-sheet.html` in this session's scratchpad (outside the repo; ask the agent to regenerate it if it's gone).
+- On the iPhone (tunnel URL, installed app): sign-in, following, global, a cook, your profile, Maya's profile, log (camera + library), import. Check the font loads, both color schemes (Settings → Display), and that the tab bar and header clear the notch and home indicator.
+- **Local-only fixture rows were used for the review and have been removed** (index back to 2 cooks, 1 account, no kudos/comments/follows; checked). For next time, they were (every fixture DID starts `did:plc:fixture`, every fixture rkey contains `3mwpfix`: Maya Okafor, Theo, 3 cooks, kudos/comments on Bleeg, a follow of Maya). The cleanup SQL:
+  ```sql
+  DELETE FROM follow WHERE uri LIKE '%3mwpfix%' OR "subjectDid" LIKE 'did:plc:fixture%' OR "authorDid" LIKE 'did:plc:fixture%';
+  DELETE FROM kudos WHERE uri LIKE '%3mwpfix%' OR "authorDid" LIKE 'did:plc:fixture%' OR "subjectUri" LIKE '%did:plc:fixture%';
+  DELETE FROM comment WHERE uri LIKE '%3mwpfix%' OR "authorDid" LIKE 'did:plc:fixture%' OR "subjectUri" LIKE '%did:plc:fixture%';
+  DELETE FROM cook WHERE "authorDid" LIKE 'did:plc:fixture%';
+  DELETE FROM account WHERE did LIKE 'did:plc:fixture%';
+  ```
+  (`docker exec -i plates-social-postgres-1 psql -U cooklog -d cooklog`); the index should then be back to 2 cooks, 1 account, no kudos/comments/follows.
+
+### Known issues
+
+- Home-screen icon is still the orange placeholder (Phase 7).
+- `field-sizing: content` (auto-growing comment box) is Chromium/Safari 26+; older Safari just shows a fixed one-line box that scrolls.
+- Carried from Phase 6: the dev "N" indicator overlaps the Following tab; the others unchanged.
+
+### Next step
+
+Human: merge the Phase 6.5 PR. Still open: whether to add a kudos button to feed cards (needs the `/api/feed` change described above). Phase 7 is blocked until the human provides a domain.
+
+---
+
+## Phase 6 — Stats and polish ✅ complete (merged, PR #7)
 
 Branch: `feature/phase-6-polish`
 
@@ -54,7 +132,7 @@ On the iPhone (tunnel URL, installed app), and Android if available:
 
 ### Next step
 
-Human: review, then the device walkthrough above. Then PR for Phase 6. Phase 7 is blocked until the human provides a domain.
+Human: review, then the device walkthrough above. Then PR for Phase 6. Next is Phase 6.5 (UI and UX review, SPEC §8) on a new branch. Phase 7 is blocked until the human provides a domain.
 
 ---
 

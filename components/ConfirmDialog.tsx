@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { button } from "./ui";
 
 // Asks before a delete (§6.6). A native <dialog> (focus trap, Esc to
 // cancel) rather than window.confirm, which iOS standalone apps render
@@ -37,20 +38,15 @@ export function ConfirmDialog({
         e.preventDefault();
         if (!busy) onCancel();
       }}
-      className="m-auto w-[min(20rem,calc(100vw-2rem))] rounded-xl bg-surface p-5 text-foreground backdrop:bg-black/40"
+      className="m-auto w-[min(21rem,calc(100vw-2rem))] rounded-sheet bg-surface p-6 text-foreground backdrop:bg-black/50 backdrop:backdrop-blur-[2px]"
     >
-      <h2 className="text-base font-semibold">{title}</h2>
-      <div className="mt-1 text-sm text-muted">{children}</div>
-      <div className="mt-5 flex justify-end gap-2">
-        <button type="button" onClick={onCancel} disabled={busy} className="h-11 rounded-lg px-4 text-sm font-medium disabled:opacity-60">
+      <h2 className="font-display text-dish">{title}</h2>
+      <div className="mt-2 text-body text-muted">{children}</div>
+      <div className="mt-6 grid grid-cols-2 gap-2">
+        <button type="button" onClick={onCancel} disabled={busy} className={button({ variant: "secondary" })}>
           Cancel
         </button>
-        <button
-          type="button"
-          onClick={onConfirm}
-          disabled={busy}
-          className="h-11 rounded-lg bg-red-600 px-4 text-sm font-semibold text-white disabled:opacity-60"
-        >
+        <button type="button" onClick={onConfirm} disabled={busy} className={button({ variant: "destructive" })}>
           {busy ? "Deleting…" : confirmLabel}
         </button>
       </div>

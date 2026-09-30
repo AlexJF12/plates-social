@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ErrorText, FieldLabel, button, input } from "./ui";
 
 export function LoginForm() {
   const [handle, setHandle] = useState("");
@@ -30,9 +31,7 @@ export function LoginForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <label className="block">
-        <span className="mb-1 block text-sm font-medium">
-          Bluesky / atproto handle
-        </span>
+        <FieldLabel>Your Bluesky handle</FieldLabel>
         <input
           type="text"
           name="handle"
@@ -46,23 +45,18 @@ export function LoginForm() {
           inputMode="url"
           disabled={loading}
           // 16px text stops iOS Safari zooming in on focus.
-          className="h-12 w-full rounded-lg border border-border bg-surface px-3 text-base outline-none focus:border-accent"
+          className={`${input} h-13`}
         />
       </label>
 
-      {error && (
-        <p role="alert" className="text-sm text-red-600">
-          {error}
-        </p>
-      )}
+      {error && <ErrorText>{error}</ErrorText>}
 
-      <button
-        type="submit"
-        disabled={loading || !handle.trim()}
-        className="h-12 w-full rounded-lg bg-accent font-semibold text-accent-foreground disabled:opacity-50"
-      >
+      <button type="submit" disabled={loading || !handle.trim()} className={button({ size: "lg", full: true })}>
         {loading ? "Redirecting…" : "Sign in"}
       </button>
+      <p className="text-small text-pretty text-muted">
+        Any atproto account works. Your cooks are saved to your own account, not ours.
+      </p>
     </form>
   );
 }

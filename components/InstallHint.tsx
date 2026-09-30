@@ -1,6 +1,8 @@
 "use client";
 
+import { Share, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { button } from "./ui";
 import type { BeforeInstallPromptEvent } from "@/lib/installPrompt";
 
 // Install hint (§7.1), shown once until dismissed and never inside the
@@ -85,10 +87,10 @@ export function InstallHint() {
   return (
     <aside
       aria-label="Install the app"
-      className="flex items-center gap-2 border-b border-border bg-surface py-2 pr-1 pl-4"
+      className="flex items-center gap-2 bg-accent-soft py-2 pr-1 pl-4"
       data-testid="install-hint"
     >
-      <p className="flex-1 text-sm">
+      <p className="flex-1 text-small">
         {hint.kind === "ios" ? (
           <>
             <span className="font-semibold">Add to Home Screen:</span> tap Share{" "}
@@ -102,7 +104,7 @@ export function InstallHint() {
         <button
           type="button"
           onClick={() => install(hint.event)}
-          className="h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-foreground"
+          className={button()}
         >
           Install
         </button>
@@ -113,9 +115,7 @@ export function InstallHint() {
         aria-label="Dismiss"
         className="flex h-11 w-11 shrink-0 items-center justify-center text-muted"
       >
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
-          <path d="M18 6 6 18M6 6l12 12" />
-        </svg>
+        <X size={18} strokeWidth={2} aria-hidden />
       </button>
     </aside>
   );
@@ -124,20 +124,12 @@ export function InstallHint() {
 // Safari's Share glyph, so people can spot the button.
 function ShareIcon() {
   return (
-    <svg
-      width="16"
-      height="16"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
+    <Share
+      size={16}
+      strokeWidth={2}
       className="inline-block -translate-y-0.5 align-middle"
       aria-label="(the square with an arrow)"
       role="img"
-    >
-      <path d="M12 3v12M8 7l4-4 4 4M5 11v9a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-9" />
-    </svg>
+    />
   );
 }

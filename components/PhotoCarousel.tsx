@@ -14,7 +14,7 @@ export function PhotoCarousel({ did, images }: { did: string; images: CookImage[
   const ratio = Math.max(first.width / first.height, 4 / 5);
 
   return (
-    <div className="relative bg-border">
+    <div className="relative bg-sunken">
       <div
         ref={scroller}
         onScroll={(e) => {
@@ -37,13 +37,15 @@ export function PhotoCarousel({ did, images }: { did: string; images: CookImage[
         ))}
       </div>
       {images.length > 1 && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-2 flex justify-center gap-1.5" aria-hidden>
-          {images.map((img, i) => (
-            <span
-              key={img.cid + i}
-              className={`h-1.5 w-1.5 rounded-full shadow ${i === index ? "bg-white" : "bg-white/50"}`}
-            />
-          ))}
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center" aria-hidden>
+          <div className="flex gap-1.5 rounded-full bg-black/35 px-2 py-1.5 backdrop-blur-sm">
+            {images.map((img, i) => (
+              <span
+                key={img.cid + i}
+                className={`h-1.5 rounded-full bg-white transition-[width,opacity] duration-200 ${i === index ? "w-4" : "w-1.5 opacity-60"}`}
+              />
+            ))}
+          </div>
         </div>
       )}
       {images.length > 1 && (

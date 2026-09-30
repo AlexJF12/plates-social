@@ -15,24 +15,26 @@ const html = `<!doctype html>
 <meta name="color-scheme" content="light dark">
 <title>${APP_NAME}: offline</title>
 <style>
-  :root { --bg: ${THEME.light.background}; --fg: ${THEME.light.foreground}; --muted: #78716c; }
+  /* Self-contained copy of the app's tokens (no web font: nothing else is cached). */
+  :root { --bg: ${THEME.light.background}; --fg: ${THEME.light.foreground}; --muted: ${THEME.light.muted}; --accent: ${THEME.light.accent}; --on-accent: ${THEME.light.accentForeground}; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: ${THEME.dark.background}; --fg: ${THEME.dark.foreground}; --muted: #a8a29e; }
+    :root { --bg: ${THEME.dark.background}; --fg: ${THEME.dark.foreground}; --muted: ${THEME.dark.muted}; --accent: ${THEME.dark.accent}; --on-accent: ${THEME.dark.accentForeground}; }
   }
   html, body { height: 100%; margin: 0; }
   body {
     display: flex; align-items: center; justify-content: center;
-    padding: env(safe-area-inset-top) 24px env(safe-area-inset-bottom);
+    padding: env(safe-area-inset-top) 32px env(safe-area-inset-bottom);
     background: var(--bg); color: var(--fg); text-align: center;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     -webkit-tap-highlight-color: transparent;
   }
-  h1 { font-size: 20px; margin: 0; }
-  p { margin: 8px 0 0; color: var(--muted); font-size: 15px; line-height: 1.4; }
+  h1 { font-family: Georgia, "Times New Roman", serif; font-weight: 400; font-size: 22px; line-height: 1.2; margin: 0; }
+  p { margin: 8px auto 0; max-width: 20rem; color: var(--muted); font-size: 16px; line-height: 1.45; }
   button {
-    margin-top: 24px; min-height: 44px; padding: 0 20px; border: 0; border-radius: 8px;
-    background: ${THEME.accent}; color: #fff; font: inherit; font-weight: 600;
+    margin-top: 24px; min-height: 44px; min-width: 200px; padding: 0 16px; border: 0; border-radius: 12px;
+    background: var(--accent); color: var(--on-accent); font: inherit; font-weight: 600;
   }
+  button:active { transform: scale(0.97); }
 </style>
 </head>
 <body>

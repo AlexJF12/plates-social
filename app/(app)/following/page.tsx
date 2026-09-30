@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { CookFeed } from "@/components/CookFeed";
-import { PageHeader } from "@/components/PageHeader";
+import { FeedHeader } from "@/components/FeedHeader";
+import { EmptyState, button } from "@/components/ui";
 import { getDid } from "@/lib/auth/session";
 import { getCookFeed } from "@/lib/db/queries";
 
@@ -14,26 +15,27 @@ export default async function FollowingPage() {
 
   return (
     <>
-      <PageHeader title="Following" />
+      <FeedHeader current="/following" />
       <main className="mx-auto w-full max-w-md">
         <CookFeed
           initial={initial}
           following
           empty={
-            <div className="px-6 py-16 text-center">
-              <p className="font-semibold">Nothing here yet</p>
-              <p className="mt-1 text-sm text-muted">
-                Cooks from people you follow show up here, along with your own.
-              </p>
-              <div className="mt-5 flex flex-col items-center gap-2">
-                <Link href="/import" className="inline-flex h-11 items-center rounded-lg bg-accent px-5 font-semibold text-accent-foreground">
-                  Find people from Bluesky
-                </Link>
-                <Link href="/global" className="inline-flex h-11 items-center px-5 font-medium text-accent">
-                  Browse the global feed
-                </Link>
-              </div>
-            </div>
+            <EmptyState
+              title="Follow people to fill this feed"
+              actions={
+                <>
+                  <Link href="/import" className={button()}>
+                    Find people from Bluesky
+                  </Link>
+                  <Link href="/global" className={button({ variant: "quiet" })}>
+                    Browse the global feed
+                  </Link>
+                </>
+              }
+            >
+              Cooks from people you follow show up here, along with your own.
+            </EmptyState>
           }
         />
       </main>

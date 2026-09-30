@@ -1,11 +1,13 @@
 "use client";
 
+import { Camera, ImagePlus, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TID } from "@atproto/common-web";
 import { datetimeLocalInputToCookedAt, toDatetimeLocalInput } from "@/lib/cook/datetime";
 import { MEAL_TYPES } from "@/lib/cook/mealTypes";
 import { processImage } from "@/lib/image/process";
+import { ErrorText, FieldLabel, button, chip, input } from "./ui";
 
 const MAX_PHOTOS = 4;
 const DISH_MAX = 100;
@@ -195,37 +197,56 @@ export function LogCookForm() {
           : "Post cook";
 
   return (
-    <form onSubmit={submit} className="space-y-6">
+    <form onSubmit={submit} className="space-y-7">
       <section aria-label="Photos">
-        <div className="grid grid-cols-2 gap-2">
-          {photos.map((p, i) => (
-            <div key={p.id} className="relative aspect-square overflow-hidden rounded-lg bg-border">
-              {/* eslint-disable-next-line @next/next/no-img-element -- local object URL */}
-              <img src={p.previewUrl} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+        {photos.length === 0 ? (
+          <button
+            type="button"
+            onClick={() => fileInput.current?.click()}
+            disabled={busy || processing}
+            className="flex aspect-[3/2] w-full flex-col items-center justify-center rounded-sheet bg-sunken text-center transition-transform duration-100 active:scale-[0.99] disabled:opacity-50"
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-accent text-accent-foreground">
+              <Camera size={26} strokeWidth={2} aria-hidden />
+            </span>
+            <span className="mt-3 text-lead font-semibold">{processing ? "Preparing…" : "Add photos"}</span>
+            <span className="mt-0.5 text-small text-muted">Take one or choose up to {MAX_PHOTOS}</span>
+          </button>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {photos.map((p, i) => (
+              <div key={p.id} className="relative aspect-square overflow-hidden rounded-control bg-sunken">
+                {/* eslint-disable-next-line @next/next/no-img-element -- local object URL */}
+                <img src={p.previewUrl} alt={`Photo ${i + 1}`} className="h-full w-full object-cover" />
+                <button
+                  type="button"
+                  onClick={() => removePhoto(p.id)}
+                  disabled={busy}
+                  aria-label={`Remove photo ${i + 1}`}
+                  className="absolute top-0 right-0 flex h-11 w-11 items-center justify-center disabled:opacity-50"
+                >
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+                    <X size={16} strokeWidth={2.5} aria-hidden />
+                  </span>
+                </button>
+              </div>
+            ))}
+            {photos.length < MAX_PHOTOS && (
               <button
                 type="button"
-                onClick={() => removePhoto(p.id)}
-                disabled={busy}
-                aria-label={`Remove photo ${i + 1}`}
-                className="absolute right-1 top-1 flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-lg text-white disabled:opacity-50"
+                onClick={() => fileInput.current?.click()}
+                disabled={busy || processing}
+                className="flex aspect-square flex-col items-center justify-center rounded-control border-2 border-dashed border-border text-small font-semibold text-muted active:bg-sunken disabled:opacity-50"
               >
-                ×
+                <ImagePlus size={26} strokeWidth={1.8} aria-hidden />
+                <span className="mt-2">{processing ? "Preparing…" : "Add more"}</span>
+                <span className="mt-0.5 font-normal tabular-nums">
+                  {photos.length} of {MAX_PHOTOS}
+                </span>
               </button>
-            </div>
-          ))}
-          {photos.length < MAX_PHOTOS && (
-            <button
-              type="button"
-              onClick={() => fileInput.current?.click()}
-              disabled={busy || processing}
-              className={`flex aspect-square flex-col items-center justify-center rounded-lg border-2 border-dashed border-border text-sm font-medium text-muted disabled:opacity-50 ${photos.length === 0 ? "col-span-2 aspect-[4/3]" : ""}`}
-            >
-              <span className="text-3xl leading-none">+</span>
-              <span className="mt-2">{processing ? "Preparing…" : photos.length === 0 ? "Add photos" : "Add more"}</span>
-              <span className="mt-1 text-xs">{photos.length}/{MAX_PHOTOS}</span>
-            </button>
-          )}
-        </div>
+            )}
+          </div>
+        )}
         <input
           ref={fileInput}
           type="file"
@@ -235,15 +256,11 @@ export function LogCookForm() {
           data-testid="photo-input"
           onChange={(e) => onFiles(e.target.files)}
         />
-        {photoError && (
-          <p role="alert" className="mt-2 text-sm text-red-600">
-            {photoError}
-          </p>
-        )}
+        {photoError && <ErrorText className="mt-2">{photoError}</ErrorText>}
       </section>
 
       <label className="block">
-        <span className="mb-1 block text-sm font-medium">Dish</span>
+        <FieldLabel>Dish</FieldLabel>
         <input
           type="text"
           name="dishName"
@@ -251,17 +268,19 @@ export function LogCookForm() {
           onChange={(e) => setDishName(e.target.value)}
           placeholder="What did you cook?"
           disabled={busy}
-          className="h-12 w-full rounded-lg border border-border bg-surface px-3 text-base outline-none focus:border-accent"
+          className={`${input} h-12`}
         />
         {dishLen > DISH_MAX && (
-          <span className="mt-1 block text-xs text-red-600">
+          <span className="mt-1 block text-caption text-danger">
             {dishLen}/{DISH_MAX} characters
           </span>
         )}
       </label>
 
       <fieldset>
-        <legend className="mb-2 text-sm font-medium">Meal</legend>
+        <legend className="p-0">
+          <FieldLabel>Meal</FieldLabel>
+        </legend>
         <div className="flex flex-wrap gap-2">
           {MEAL_TYPES.map((m) => (
             <button
@@ -270,11 +289,7 @@ export function LogCookForm() {
               aria-pressed={mealType === m.value}
               onClick={() => setMealType(m.value)}
               disabled={busy}
-              className={`h-11 rounded-full border px-4 text-sm font-medium ${
-                mealType === m.value
-                  ? "border-accent bg-accent text-accent-foreground"
-                  : "border-border bg-surface"
-              }`}
+              className={chip(mealType === m.value)}
             >
               {m.label}
             </button>
@@ -283,58 +298,47 @@ export function LogCookForm() {
       </fieldset>
 
       <label className="block">
-        <span className="mb-1 block text-sm font-medium">
-          Note <span className="font-normal text-muted">(optional)</span>
-        </span>
+        <FieldLabel optional>Note</FieldLabel>
         <textarea
           name="note"
           value={note}
           onChange={(e) => setNote(e.target.value)}
           rows={4}
           disabled={busy}
-          className="w-full rounded-lg border border-border bg-surface p-3 text-base outline-none focus:border-accent"
+          placeholder="How did it turn out? What would you change?"
+          className={`${input} block resize-none py-3`}
         />
         {noteLen > NOTE_MAX * 0.9 && (
-          <span className={`mt-1 block text-xs ${noteLen > NOTE_MAX ? "text-red-600" : "text-muted"}`}>
+          <span className={`mt-1 block text-caption tabular-nums ${noteLen > NOTE_MAX ? "text-danger" : "text-muted"}`}>
             {noteLen}/{NOTE_MAX}
           </span>
         )}
       </label>
 
       <label className="block">
-        <span className="mb-1 block text-sm font-medium">Cooked</span>
+        <FieldLabel>Cooked</FieldLabel>
         <input
           type="datetime-local"
           name="cookedAt"
           value={cookedAtInput}
           onChange={(e) => setCookedAtInput(e.target.value)}
           disabled={busy}
-          className="h-12 w-full rounded-lg border border-border bg-surface px-3 text-base outline-none focus:border-accent"
+          className={`${input} h-12`}
         />
       </label>
 
-      {phase.kind === "error" && (
-        <p role="alert" className="text-sm text-red-600">
-          {phase.message}
-        </p>
-      )}
+      {phase.kind === "error" && <ErrorText>{phase.message}</ErrorText>}
 
-      <div>
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="relative h-12 w-full overflow-hidden rounded-lg bg-accent font-semibold text-accent-foreground disabled:opacity-50"
-        >
-          {phase.kind === "uploading" && (
-            <span
-              aria-hidden
-              className="absolute inset-y-0 left-0 bg-black/15 transition-[width]"
-              style={{ width: `${phase.percent}%` }}
-            />
-          )}
-          <span className="relative">{label}</span>
-        </button>
-      </div>
+      <button type="submit" disabled={!canSubmit} className={`${button({ size: "lg", full: true })} relative overflow-hidden`}>
+        {phase.kind === "uploading" && (
+          <span
+            aria-hidden
+            className="absolute inset-y-0 left-0 bg-black/20 transition-[width]"
+            style={{ width: `${phase.percent}%` }}
+          />
+        )}
+        <span className="relative">{label}</span>
+      </button>
     </form>
   );
 }

@@ -4,7 +4,7 @@ test("sign-in page renders at 375px", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Cooklog" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Sign in" })).toBeDisabled();
-  await page.getByLabel("Bluesky / atproto handle").fill("alice.bsky.social");
+  await page.getByLabel("Your Bluesky handle").fill("alice.bsky.social");
   await expect(page.getByRole("button", { name: "Sign in" })).toBeEnabled();
   const scrollWidth = await page.evaluate(() => document.body.scrollWidth);
   expect(scrollWidth).toBeLessThanOrEqual(375);
@@ -14,10 +14,10 @@ test("sign-in page renders at 375px", async ({ page }) => {
 test("unknown handle shows an error, not a redirect", async ({ page }) => {
   await page.goto("/");
   await page
-    .getByLabel("Bluesky / atproto handle")
+    .getByLabel("Your Bluesky handle")
     .fill("this-handle-does-not-exist-9f3k.bsky.social");
   await page.getByRole("button", { name: "Sign in" }).click();
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator("form").getByRole("alert")).toBeVisible();
   await expect(page).toHaveURL("/");
 });
 

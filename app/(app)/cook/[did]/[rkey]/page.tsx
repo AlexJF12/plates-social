@@ -28,16 +28,26 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
 
   return (
     <>
-      <PageHeader title={cook.dishName} back />
+      <PageHeader
+        title=""
+        back
+        action={isMine ? <DeleteCookButton rkey={cook.rkey} afterPath={profilePath(cook.author)} /> : undefined}
+      />
       <main className="mx-auto w-full max-w-md pb-8">
-        <header className="flex h-14 items-center gap-3 px-4">
-          <Link href={profilePath(cook.author)} className="flex min-w-0 items-center gap-3">
-            <Avatar author={cook.author} size={32} />
-            <span className="truncate text-sm font-semibold">{displayName(cook.author)}</span>
+        <header className="flex items-center gap-3 px-4 pb-3">
+          <Link href={profilePath(cook.author)} className="shrink-0">
+            <Avatar author={cook.author} size={40} />
           </Link>
-          <span className="ml-auto shrink-0 text-sm text-muted">
-            <TimeAgo iso={cook.sortAt} />
-          </span>
+          <div className="min-w-0 flex-1">
+            <Link href={profilePath(cook.author)} className="block truncate text-body font-semibold">
+              {displayName(cook.author)}
+            </Link>
+            <p className="text-small text-muted">
+              {mealTypeLabel(cook.mealType)}
+              <span aria-hidden>, </span>
+              <TimeAgo iso={cook.sortAt} long />
+            </p>
+          </div>
         </header>
 
         <div className="space-y-1">
@@ -50,25 +60,17 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
               width={img.aspectRatio.width}
               height={img.aspectRatio.height}
               loading={i === 0 ? "eager" : "lazy"}
-              className="h-auto w-full bg-border"
+              className="h-auto w-full bg-sunken"
               style={{ aspectRatio: `${img.aspectRatio.width} / ${img.aspectRatio.height}` }}
             />
           ))}
         </div>
 
-        <section className="px-4 pt-4">
-          <h2 className="text-2xl leading-tight font-bold break-words">{cook.dishName}</h2>
-          <p className="mt-1 text-xs font-medium tracking-wide text-muted uppercase">
-            {mealTypeLabel(cook.mealType)} · Cooked {formatCookedAt(cook.cookedAt)}
-          </p>
-          {cook.note && <p className="mt-3 text-[15px] break-words whitespace-pre-line">{cook.note}</p>}
+        <section className="px-4 pt-5 pb-6">
+          <h2 className="font-display text-title text-balance break-words">{cook.dishName}</h2>
+          <p className="mt-2 text-small text-muted">Cooked {formatCookedAt(cook.cookedAt)}</p>
+          {cook.note && <p className="mt-4 text-lead break-words whitespace-pre-line">{cook.note}</p>}
         </section>
-
-        {isMine && (
-          <div className="px-4 pt-4">
-            <DeleteCookButton rkey={cook.rkey} afterPath={profilePath(cook.author)} />
-          </div>
-        )}
 
         <CookKudos
           cookUri={cook.uri}

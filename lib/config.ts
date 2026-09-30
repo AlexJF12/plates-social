@@ -23,9 +23,11 @@ export const SCOPE = [
   "blob:image/*",
 ].join(" ");
 
-// Theme colors shared by the manifest, viewport and CSS.
+// Theme colors shared by the manifest, viewport, offline page and CSS
+// (app/globals.css holds the full palette).
 export const THEME = {
-  light: { background: "#fafaf9", foreground: "#1c1917" },
-  dark: { background: "#0c0a09", foreground: "#f5f5f4" },
-  accent: "#e8590c",
+  light: { background: "#f8f6f1", foreground: "#211d18", muted: "#6e665b", accent: "#2f6b3f", accentForeground: "#ffffff" },
+  dark: { background: "#151311", foreground: "#f3efe8", muted: "#a29a8e", accent: "#8cc596", accentForeground: "#10200f" },
+  // Placeholder icons (scripts/gen-icons.ts) are replaced in Phase 7.
+  accent: "#2f6b3f",
 } as const;

@@ -1,10 +1,10 @@
-import { PageHeader } from "@/components/PageHeader";
+import { FeedHeader } from "@/components/FeedHeader";
 import { FeedSkeleton } from "@/components/Skeletons";
 
 export default function Loading() {
   return (
     <>
-      <PageHeader title="Following" />
+      <FeedHeader current="/following" />
       <main className="mx-auto w-full max-w-md">
         <FeedSkeleton />
       </main>
