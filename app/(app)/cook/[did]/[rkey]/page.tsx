@@ -1,23 +1,30 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
+import { CookComments } from "@/components/CookComments";
+import { CookKudos } from "@/components/CookKudos";
+import { DeleteCookButton } from "@/components/DeleteCookButton";
 import { PageHeader } from "@/components/PageHeader";
 import { TimeAgo } from "@/components/TimeAgo";
 import { getDid } from "@/lib/auth/session";
 import { formatCookedAt } from "@/lib/cook/datetime";
 import { mealTypeLabel } from "@/lib/cook/mealTypes";
-import { getCookDetail } from "@/lib/db/queries";
+import { getAccount, getCookDetail, getKudosUri } from "@/lib/db/queries";
 import { imageUrl } from "@/lib/image/url";
 import { displayName, profilePath } from "@/lib/links";
 
 // One cook: every photo at its full aspect ratio, the full note, kudos and
-// comments (§2.1). Giving kudos and commenting arrive in Phase 5.
+// comments (§2.1). The author can delete it; others can give kudos.
 export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]">) {
-  if (!(await getDid())) redirect("/");
+  const viewerDid = await getDid();
+  if (!viewerDid) redirect("/");
   const { did, rkey } = await params;
   const detail = await getCookDetail(decodeURIComponent(did), rkey);
   if (!detail) notFound();
   const { cook, kudos, comments } = detail;
+  const isMine = cook.author.did === viewerDid;
+  const [kudosUri, account] = await Promise.all([getKudosUri(viewerDid, cook.uri), getAccount(viewerDid)]);
+  const viewer = account ?? { did: viewerDid, handle: null, displayName: null, avatarCid: null };
 
   return (
     <>
@@ -57,52 +64,20 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
           {cook.note && <p className="mt-3 text-[15px] break-words whitespace-pre-line">{cook.note}</p>}
         </section>
 
-        <section className="mt-6 border-t border-border px-4 pt-4" aria-labelledby="kudos-h">
-          <h3 id="kudos-h" className="text-sm font-semibold">
-            {kudos.length} kudos
-          </h3>
-          {kudos.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-1">
-              {kudos.map((k) => (
-                <li key={k.did}>
-                  <Link href={profilePath(k)} title={displayName(k)} aria-label={displayName(k)}>
-                    <Avatar author={k} size={28} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        {isMine && (
+          <div className="px-4 pt-4">
+            <DeleteCookButton rkey={cook.rkey} afterPath={profilePath(cook.author)} />
+          </div>
+        )}
 
-        <section className="mt-6 border-t border-border px-4 pt-4" aria-labelledby="comments-h">
-          <h3 id="comments-h" className="text-sm font-semibold">
-            {cook.commentCount} {cook.commentCount === 1 ? "comment" : "comments"}
-          </h3>
-          {comments.length === 0 ? (
-            <p className="mt-2 text-sm text-muted">No comments yet.</p>
-          ) : (
-            <ul className="mt-3 space-y-4">
-              {comments.map((c) => (
-                <li key={c.uri} className="flex gap-3">
-                  <Link href={profilePath(c.author)} className="shrink-0">
-                    <Avatar author={c.author} size={32} />
-                  </Link>
-                  <div className="min-w-0">
-                    <p className="text-sm">
-                      <Link href={profilePath(c.author)} className="font-semibold">
-                        {displayName(c.author)}
-                      </Link>{" "}
-                      <span className="text-muted">
-                        <TimeAgo iso={c.sortAt} />
-                      </span>
-                    </p>
-                    <p className="text-[15px] break-words whitespace-pre-line">{c.text}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+        <CookKudos
+          cookUri={cook.uri}
+          viewer={viewer}
+          initialGiven={Boolean(kudosUri)}
+          initialKudos={kudos}
+          canGive={!isMine}
+        />
+        <CookComments cookUri={cook.uri} viewerDid={viewerDid} initial={comments} initialCount={cook.commentCount} />
       </main>
     </>
   );

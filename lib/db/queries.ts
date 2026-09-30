@@ -37,7 +37,7 @@ export type CookView = {
 export type FeedPage = { items: CookView[]; cursor: string | null };
 
 // Cursor = sortAt + uri of the last item (§6.2). The ISO date has no "~".
-const encodeCursor = (c: CookView) => `${c.sortAt}~${c.uri}`;
+const encodeCursor = (c: { sortAt: string; uri: string }) => `${c.sortAt}~${c.uri}`;
 function decodeCursor(cursor: string): { sortAt: Date; uri: string } | null {
   const i = cursor.indexOf("~");
   if (i < 0) return null;
@@ -161,16 +161,70 @@ export type CommentView = {
   sortAt: string;
 };
 
-// Phase 3 shows up to this many comments; paging arrives with posting
-// comments in Phase 5.
-const COMMENT_LIMIT = 50;
+export type CommentPage = { items: CommentView[]; cursor: string | null };
+
+const authorCols = ["account.did", "account.handle", "account.displayName", "account.avatarCid"] as const;
+
+export const cookUriOf = (did: string, rkey: string) => `at://${did}/${COLLECTIONS.cook}/${rkey}`;
+
+// A cook's comments, oldest first, 20 per page (§6.2). Comments on a cook
+// that is gone or hidden aren't shown (§6.2), but their rows are kept: the
+// cook may come back (e.g. its author is reactivated).
+export async function getComments(opts: {
+  cookUri: string;
+  cursor?: string | null;
+  db?: Db;
+}): Promise<CommentPage> {
+  const db = opts.db ?? getDb();
+  let q = db
+    .selectFrom("comment")
+    .innerJoin("account", "account.did", "comment.authorDid")
+    .where("account.active", "=", true)
+    .where("comment.subjectUri", "=", opts.cookUri)
+    .where((eb) => eb.exists(cookQuery(db).where("cook.uri", "=", opts.cookUri)))
+    .select([...authorCols, "comment.uri", "comment.text", "comment.sortAt"])
+    .orderBy("comment.sortAt", "asc")
+    .orderBy("comment.uri", "asc")
+    .limit(PAGE_SIZE + 1);
+  const after = opts.cursor ? decodeCursor(opts.cursor) : null;
+  if (after) {
+    q = q.where((eb) =>
+      eb(eb.refTuple("comment.sortAt", "comment.uri"), ">", eb.tuple(after.sortAt, after.uri)),
+    );
+  }
+  const rows = await q.execute();
+  const items = rows.slice(0, PAGE_SIZE).map(
+    (c): CommentView => ({
+      uri: c.uri,
+      author: { did: c.did, handle: c.handle, displayName: c.displayName, avatarCid: c.avatarCid },
+      text: c.text,
+      sortAt: c.sortAt.toISOString(),
+    }),
+  );
+  return {
+    items,
+    cursor: rows.length > PAGE_SIZE ? encodeCursor(items[items.length - 1]) : null,
+  };
+}
+
+// The visible cook at uri (uri + cid for a strongRef), or null.
+export async function getVisibleCook(uri: string, db: Db = getDb()) {
+  return (
+    (await db
+      .selectFrom("cook")
+      .innerJoin("account", "account.did", "cook.authorDid")
+      .where("account.active", "=", true)
+      .where("cook.uri", "=", uri)
+      .select(["cook.uri", "cook.cid", "cook.authorDid"])
+      .executeTakeFirst()) ?? null
+  );
+}
 
 export async function getCookDetail(did: string, rkey: string, db: Db = getDb()) {
-  const uri = `at://${did}/${COLLECTIONS.cook}/${rkey}`;
+  const uri = cookUriOf(did, rkey);
   const row = await cookQuery(db).where("cook.uri", "=", uri).executeTakeFirst();
   if (!row) return null;
 
-  const authorCols = ["account.did", "account.handle", "account.displayName", "account.avatarCid"] as const;
   const [kudos, comments] = await Promise.all([
     db
       .selectFrom("kudos")
@@ -180,30 +234,21 @@ export async function getCookDetail(did: string, rkey: string, db: Db = getDb())
       .select(authorCols)
       .orderBy("kudos.createdAt", "asc")
       .execute(),
-    db
-      .selectFrom("comment")
-      .innerJoin("account", "account.did", "comment.authorDid")
-      .where("account.active", "=", true)
-      .where("comment.subjectUri", "=", uri)
-      .select([...authorCols, "comment.uri", "comment.text", "comment.sortAt"])
-      .orderBy("comment.sortAt", "asc")
-      .orderBy("comment.uri", "asc")
-      .limit(COMMENT_LIMIT)
-      .execute(),
+    getComments({ cookUri: uri, db }),
   ]);
 
-  return {
-    cook: toView(row),
-    kudos: kudos satisfies Author[],
-    comments: comments.map(
-      (c): CommentView => ({
-        uri: c.uri,
-        author: { did: c.did, handle: c.handle, displayName: c.displayName, avatarCid: c.avatarCid },
-        text: c.text,
-        sortAt: c.sortAt.toISOString(),
-      }),
-    ),
-  };
+  return { cook: toView(row), kudos: kudos satisfies Author[], comments };
+}
+
+// The viewer's kudos record for a cook, if any.
+export async function getKudosUri(viewer: string, cookUri: string, db: Db = getDb()) {
+  const row = await db
+    .selectFrom("kudos")
+    .select("uri")
+    .where("authorDid", "=", viewer)
+    .where("subjectUri", "=", cookUri)
+    .executeTakeFirst();
+  return row?.uri ?? null;
 }
 
 // The viewer's follow record for subject, if any (profile follow button).
