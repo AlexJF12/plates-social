@@ -2,20 +2,26 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
 import { CookFeed } from "@/components/CookFeed";
+import { FollowButton } from "@/components/FollowButton";
+import { LogoutButton } from "@/components/LogoutButton";
 import { PageHeader } from "@/components/PageHeader";
 import { getDid } from "@/lib/auth/session";
-import { getAccount, getCookFeed } from "@/lib/db/queries";
+import { getAccount, getCookFeed, getFollowUri } from "@/lib/db/queries";
 import { displayName } from "@/lib/links";
 
-// A person's cooks, newest first. [actor] is a handle or a DID. Follow
-// button (Phase 4) and stats (Phase 6) come later.
+// A person's cooks, newest first. [actor] is a handle or a DID. Others get a
+// follow button; your own has the Bluesky import and sign-out. Stats
+// arrive in Phase 6.
 export default async function ProfilePage({ params }: PageProps<"/profile/[actor]">) {
   const viewer = await getDid();
   if (!viewer) redirect("/");
   const account = await getAccount(decodeURIComponent((await params).actor));
   if (!account) notFound();
   const isMe = account.did === viewer;
-  const initial = await getCookFeed({ authorDid: account.did });
+  const [initial, followUri] = await Promise.all([
+    getCookFeed({ authorDid: account.did }),
+    isMe ? null : getFollowUri(viewer, account.did),
+  ]);
 
   return (
     <>
@@ -29,6 +35,18 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
             </p>
             <p className="truncate text-sm text-muted">{account.handle ? `@${account.handle}` : account.did}</p>
           </div>
+        </section>
+        <section className="flex flex-wrap items-start gap-2 px-4 pb-4">
+          {isMe ? (
+            <>
+              <Link href="/import" className="flex h-11 items-center rounded-lg border border-border px-4 text-sm font-medium">
+                Find people from Bluesky
+              </Link>
+              <LogoutButton />
+            </>
+          ) : (
+            <FollowButton subject={account.did} initialFollowing={Boolean(followUri)} />
+          )}
         </section>
         <CookFeed
           initial={initial}

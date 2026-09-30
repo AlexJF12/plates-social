@@ -9,10 +9,12 @@ import { CookCard } from "./CookCard";
 export function CookFeed({
   initial,
   author,
+  following = false,
   empty,
 }: {
   initial: FeedPage;
   author?: string;
+  following?: boolean;
   empty: React.ReactNode;
 }) {
   const [items, setItems] = useState<CookView[]>(initial.items);
@@ -24,7 +26,11 @@ export function CookFeed({
     if (!cursor || state === "loading") return;
     setState("loading");
     try {
-      const qs = new URLSearchParams({ cursor, ...(author ? { author } : {}) });
+      const qs = new URLSearchParams({
+        cursor,
+        ...(author ? { author } : {}),
+        ...(following ? { feed: "following" } : {}),
+      });
       const res = await fetch(`/api/feed?${qs}`);
       if (!res.ok) throw new Error(String(res.status));
       const page: FeedPage = await res.json();
@@ -38,7 +44,7 @@ export function CookFeed({
     } catch {
       setState("error");
     }
-  }, [author, cursor, state]);
+  }, [author, following, cursor, state]);
 
   useEffect(() => {
     const el = sentinel.current;

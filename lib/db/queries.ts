@@ -98,10 +98,12 @@ const toView = (r: CookRow): CookView => ({
   commentCount: r.commentCount ?? 0,
 });
 
-// Newest first. With authorDid: one person's cooks (profile); without:
-// every indexed cook (global feed).
+// Newest first. With authorDid: one person's cooks (profile). With
+// followedBy: cooks from the people that DID follows in this app, plus its
+// own (following feed). Neither: every indexed cook (global feed).
 export async function getCookFeed(opts: {
   authorDid?: string;
+  followedBy?: string;
   cursor?: string | null;
   db?: Db;
 }): Promise<FeedPage> {
@@ -110,6 +112,19 @@ export async function getCookFeed(opts: {
     .orderBy("cook.uri", "desc")
     .limit(PAGE_SIZE + 1);
   if (opts.authorDid) q = q.where("cook.authorDid", "=", opts.authorDid);
+  const me = opts.followedBy;
+  if (me) {
+    q = q.where((eb) =>
+      eb.or([
+        eb("cook.authorDid", "=", me),
+        eb(
+          "cook.authorDid",
+          "in",
+          eb.selectFrom("follow").select("follow.subjectDid").where("follow.authorDid", "=", me),
+        ),
+      ]),
+    );
+  }
   const after = opts.cursor ? decodeCursor(opts.cursor) : null;
   if (after) {
     q = q.where((eb) =>
@@ -189,4 +204,48 @@ export async function getCookDetail(did: string, rkey: string, db: Db = getDb())
       }),
     ),
   };
+}
+
+// The viewer's follow record for subject, if any (profile follow button).
+export async function getFollowUri(viewer: string, subject: string, db: Db = getDb()) {
+  const row = await db
+    .selectFrom("follow")
+    .select("uri")
+    .where("authorDid", "=", viewer)
+    .where("subjectDid", "=", subject)
+    .executeTakeFirst();
+  return row?.uri ?? null;
+}
+
+// Bluesky import (§6.3): of the given DIDs, the visible accounts with at
+// least one indexed cook that the viewer doesn't already follow here.
+export async function getImportCandidates(
+  viewer: string,
+  dids: string[],
+  db: Db = getDb(),
+): Promise<Author[]> {
+  if (dids.length === 0) return [];
+  return db
+    .selectFrom("account")
+    .select(["did", "handle", "displayName", "avatarCid"])
+    .where("active", "=", true)
+    // One array parameter, however many follows (IN would need one each).
+    .where(sql<boolean>`did = any(${dids}::text[])`)
+    .where("did", "!=", viewer)
+    .where((eb) =>
+      eb.exists(eb.selectFrom("cook").select(sql`1`.as("one")).whereRef("cook.authorDid", "=", "account.did")),
+    )
+    .where((eb) =>
+      eb.not(
+        eb.exists(
+          eb
+            .selectFrom("follow")
+            .select(sql`1`.as("one"))
+            .where("follow.authorDid", "=", viewer)
+            .whereRef("follow.subjectDid", "=", "account.did"),
+        ),
+      ),
+    )
+    .orderBy(sql`lower(coalesce("displayName", handle, did))`)
+    .execute();
 }

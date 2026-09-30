@@ -1,11 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { getPdsEndpoint } from "@atproto/common-web";
 import { isCidForBytes, parseCidSafe } from "@atproto/lex";
 import { sql } from "kysely";
 import sharp from "sharp";
 import { getDb } from "../db";
-import { getTap } from "../tap";
+import { resolvePds } from "../pds";
 import type { ImageSize } from "./url";
 
 // Image proxy (§6.5). Serves blobs from authors' PDSes, resized, cached on
@@ -55,26 +54,8 @@ export async function isReferenced(did: string, cid: string): Promise<boolean> {
 
 export class UpstreamError extends Error {}
 
-// The PDS URL comes from the author's DID document, which they control.
-// Only fetch from public https hosts so it can't be pointed at our network.
-function safePdsUrl(endpoint: string | undefined): URL | null {
-  if (!endpoint) return null;
-  try {
-    const url = new URL(endpoint);
-    const host = url.hostname;
-    const isIpLiteral = /^[\d.]+$/.test(host) || host.startsWith("[");
-    if (url.protocol !== "https:" || isIpLiteral || host === "localhost" || host.endsWith(".local")) {
-      return null;
-    }
-    return url;
-  } catch {
-    return null;
-  }
-}
-
 async function fetchBlob(did: string, cid: string): Promise<Uint8Array> {
-  const doc = await getTap().resolveDid(did);
-  const pds = safePdsUrl(doc ? getPdsEndpoint(doc) : undefined);
+  const pds = await resolvePds(did);
   if (!pds) throw new UpstreamError(`no usable PDS for ${did}`);
 
   const url = new URL("/xrpc/com.atproto.sync.getBlob", pds);

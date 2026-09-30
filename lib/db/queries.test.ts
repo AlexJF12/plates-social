@@ -2,12 +2,15 @@ import type { Kysely } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
 import { COLLECTIONS } from "../config";
 import { getDb } from ".";
-import { getAccount, getCookDetail, getCookFeed, PAGE_SIZE } from "./queries";
+import { getAccount, getCookDetail, getCookFeed, getFollowUri, getImportCandidates, PAGE_SIZE } from "./queries";
 import type { DatabaseSchema } from "./schema";
 import { inRollback } from "./testing";
 
 const ALICE = "did:plc:testalice00000000000000a";
 const BOB = "did:plc:testbob000000000000000b";
+const CAROL = "did:plc:testcarol0000000000000c";
+const DAVE = "did:plc:testdave00000000000000d";
+const HANDLES: Record<string, string> = { [ALICE]: "alice.test", [BOB]: "bob.test", [CAROL]: "carol.test", [DAVE]: "dave.test" };
 const CID = "bafkreibme22gw2h7y2h7tg2fhqotaqjucnbc24deqo72b6mkl2egezxhvy";
 
 afterAll(() => getDb().destroy());
@@ -17,7 +20,7 @@ const rkey = (i: number) => `3mw${String(i).padStart(10, "0")}`;
 const cookUri = (did: string, i: number) => `at://${did}/${COLLECTIONS.cook}/${rkey(i)}`;
 
 async function seed(db: Kysely<DatabaseSchema>, did: string, n: number, sortAt: (i: number) => Date) {
-  await db.insertInto("account").values({ did, handle: did === ALICE ? "alice.test" : "bob.test" }).execute();
+  await db.insertInto("account").values({ did, handle: HANDLES[did] }).execute();
   for (let i = 0; i < n; i++) {
     const at = sortAt(i);
     await db
@@ -45,7 +48,7 @@ async function allPages(db: Kysely<DatabaseSchema>, authorDid?: string) {
   let cursor: string | null = null;
   do {
     const page = await getCookFeed({ db, authorDid, cursor });
-    pages.push(page.items.filter((c) => [ALICE, BOB].includes(c.author.did)).map((c) => c.uri));
+    pages.push(page.items.filter((c) => c.author.did in HANDLES).map((c) => c.uri));
     cursor = page.cursor;
   } while (cursor);
   return pages;
@@ -107,6 +110,84 @@ describe("getAccount", () => {
       expect((await getAccount(ALICE, db))?.handle).toBe("alice.test");
       expect((await getAccount("Alice.Test", db))?.did).toBe(ALICE);
       expect(await getAccount("not a handle", db)).toBeNull();
+    });
+  });
+});
+
+async function addFollow(db: Kysely<DatabaseSchema>, author: string, subject: string, i = 0) {
+  await db
+    .insertInto("follow")
+    .values({ uri: `at://${author}/${COLLECTIONS.follow}/${rkey(i)}`, authorDid: author, subjectDid: subject, createdAt: new Date() })
+    .execute();
+}
+
+describe("following feed", () => {
+  it("has your own cooks plus those of people you follow, newest first, and pages", async () => {
+    await inRollback(async (db) => {
+      const base = Date.parse("2020-01-01T00:00:00Z");
+      // Interleaved times across authors; 3 × 15 cooks, only Alice + Bob count.
+      await seed(db, ALICE, 15, (i) => new Date(base + (i * 3 + 0) * 60_000));
+      await seed(db, BOB, 15, (i) => new Date(base + (i * 3 + 1) * 60_000));
+      await seed(db, CAROL, 15, (i) => new Date(base + (i * 3 + 2) * 60_000));
+      await addFollow(db, ALICE, BOB);
+      // Carol follows Alice; that mustn't put Carol's cooks in Alice's feed.
+      await addFollow(db, CAROL, ALICE);
+
+      const first = await getCookFeed({ db, followedBy: ALICE });
+      expect(first.cursor).not.toBeNull();
+      const second = await getCookFeed({ db, followedBy: ALICE, cursor: first.cursor });
+      const uris = [...first.items, ...second.items].map((c) => c.uri);
+      const expected = Array.from({ length: 15 }, (_, k) => 14 - k).flatMap((i) => [cookUri(BOB, i), cookUri(ALICE, i)]);
+      expect(first.items).toHaveLength(PAGE_SIZE);
+      expect(second.cursor).toBeNull();
+      expect(uris).toEqual(expected);
+    });
+  });
+
+  it("drops a followed account's cooks when it's inactive or unfollowed", async () => {
+    await inRollback(async (db) => {
+      await seed(db, ALICE, 0, () => new Date());
+      await seed(db, BOB, 1, () => new Date("2020-01-01T00:00:00Z"));
+      await addFollow(db, ALICE, BOB);
+      expect((await getCookFeed({ db, followedBy: ALICE })).items).toHaveLength(1);
+
+      await db.updateTable("account").set({ active: false }).where("did", "=", BOB).execute();
+      expect((await getCookFeed({ db, followedBy: ALICE })).items).toEqual([]);
+
+      await db.updateTable("account").set({ active: true }).where("did", "=", BOB).execute();
+      await db.deleteFrom("follow").where("authorDid", "=", ALICE).execute();
+      expect((await getCookFeed({ db, followedBy: ALICE })).items).toEqual([]);
+    });
+  });
+});
+
+describe("getFollowUri", () => {
+  it("returns the viewer's follow of that subject only", async () => {
+    await inRollback(async (db) => {
+      await addFollow(db, ALICE, BOB);
+      expect(await getFollowUri(ALICE, BOB, db)).toBe(`at://${ALICE}/${COLLECTIONS.follow}/${rkey(0)}`);
+      expect(await getFollowUri(BOB, ALICE, db)).toBeNull();
+    });
+  });
+});
+
+describe("getImportCandidates", () => {
+  it("keeps visible accounts with a cook that you don't already follow", async () => {
+    await inRollback(async (db) => {
+      const at = () => new Date("2020-01-01T00:00:00Z");
+      await seed(db, ALICE, 1, at);
+      await seed(db, BOB, 1, at); // candidate
+      await seed(db, CAROL, 1, at); // already followed
+      await seed(db, DAVE, 0, at); // no cooks
+      await addFollow(db, ALICE, CAROL);
+      const OUTSIDER = "did:plc:testoutsider00000000000e"; // not indexed at all
+      const bsky = [ALICE, BOB, CAROL, DAVE, OUTSIDER];
+
+      expect((await getImportCandidates(ALICE, bsky, db)).map((a) => a.did)).toEqual([BOB]);
+
+      await db.updateTable("account").set({ active: false }).where("did", "=", BOB).execute();
+      expect(await getImportCandidates(ALICE, bsky, db)).toEqual([]);
+      expect(await getImportCandidates(ALICE, [], db)).toEqual([]);
     });
   });
 });
