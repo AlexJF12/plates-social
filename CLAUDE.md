@@ -45,6 +45,9 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Tap admin POSTs need `Content-Type: application/json`, or Tap binds an empty DID list (remove "succeeds" with count 0; add returns 500 "empty slice").
 - In zsh, `curl $A` with `A="-u x:y"` passes one argument; inline `-u admin:$TAP_ADMIN_PASSWORD`.
 - Playwright on signed-in pages: the human approved minting a session cookie for their DID (HMAC with `SESSION_SECRET`), injected in the test context only, never committed.
+- To prove a record arrives through Tap (not just read-your-own-writes): delete its row, then Tap `/repos/remove` + `/repos/add` for the DID; the backfill re-delivers it within seconds.
+- tsx scripts can't import `lib/` modules that reach `@atproto/lex`/`tap` (same CJS/ESM error). For a one-off live check, use a temporary Vitest file and delete it.
+- The only indexed cook author locally is the human, so screens needing other people (import list, other profiles) need local-only fixture rows; remove them afterwards.
 
 ---
 

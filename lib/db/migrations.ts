@@ -147,6 +147,24 @@ const migrations: Record<string, Migration> = {
       }
     },
   },
+
+  // First sign-in per DID, so the Bluesky import is offered once (§6.3).
+  // App state, not user content: not part of the rebuildable index, and
+  // losing it only means the import screen is offered one more time.
+  "003_login": {
+    async up(db: Kysely<unknown>) {
+      await db.schema
+        .createTable("login")
+        .addColumn("did", "text", (col) => col.primaryKey())
+        .addColumn("firstAt", "timestamptz", (col) =>
+          col.notNull().defaultTo(sql`now()`),
+        )
+        .execute();
+    },
+    async down(db: Kysely<unknown>) {
+      await db.schema.dropTable("login").execute();
+    },
+  },
 };
 
 export function getMigrator() {

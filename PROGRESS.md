@@ -1,6 +1,63 @@
 # Progress
 
-## Current phase: 3 — Sync, global feed, profiles, images ⏸ checkpoint, verified, awaiting review (2026-09-29)
+## Current phase: 4 — Follows ⏸ checkpoint, verified, awaiting review (2026-09-29)
+
+Branch: `feature/phase-4-follows`
+
+### Built
+
+- `POST /api/follow` `{subject, rkey}`: follow. Client-generated TID rkey (reused on retry, same pattern as cooks): if `create` throws, `get` at that rkey returns the landed record. Already following in the index → returns the existing uri (double tap can't duplicate). Self/invalid DID → 400.
+- `DELETE /api/follow` `{subject}`: looks up the viewer's follow in the index, `deleteRecord`, deletes the row. Not following → `{deleted: null}`, 200.
+- `GET /api/follow/import`: the viewer's `app.bsky.graph.follow` subjects via unauthenticated `listRecords` on their PDS (`lib/follows/bluesky.ts`: 100/page, ≤100 pages, 10 s timeout per page, repeated-cursor guard, non-DID subjects skipped), intersected with `getImportCandidates` (active accounts with ≥1 cook, not self, not already followed).
+- `POST /api/follow/import` `{subjects}`: re-filters through `getImportCandidates` (so only candidates, deduped, minus already-followed), then `followMany` (`lib/follows/write.ts`): `applyWrites` in batches of 100, each batch indexed as soon as it lands; a failed batch → 502 `{followed, remaining}`, and a retry only writes what's missing.
+- Read-your-own-writes for every follow write (`upsertFollow`, plus `ensureAccount` for the author).
+- `getCookFeed({ followedBy })`: own cooks + cooks by accounts followed in this app, same cursor paging; `/api/feed?feed=following` (401 when signed out).
+- `/following`: real feed (replaces the placeholder). Empty state links to `/import` and `/global`.
+- Profile: others get `FollowButton` (flips only after the server confirms; "Saving…" while pending; inline error on failure). Your own profile gets "Find people from Bluesky" and **Sign out** (moved from the old `/following` placeholder).
+- `/import` + `components/ImportFollows.tsx`: loads the candidate list client-side (loading, error + Retry), avatars, all pre-selected, sticky "Follow all" / "Follow N" button, "Retry" after a failure. Success → `/following`.
+- **First-login flow:** migration `003_login` (`login(did, firstAt)`). The OAuth callback inserts the DID; if the row is new it redirects to `/import?first=1` (no back button, a Skip link to `/global`); with no candidates that page `replace`s to `/global` (§6.3).
+- `lib/pds.ts`: `safePdsUrl` + `resolvePds` moved out of the image proxy so the import reuses the same SSRF rules.
+- Removed `lib/identity.ts` (`resolveHandle`): its only caller was the old `/following` placeholder.
+- Tests: `lib/follows/bluesky.test.ts` (paging, dedupe, invalid subjects, repeated cursor, empty page, PDS errors), `lib/follows/write.test.ts` (250 follows → 100/100/50 `applyWrites`, every op indexed with the right uri/subject; failure mid-way keeps the landed batch), `lib/db/queries.test.ts` (+4: following feed contents/order/paging, inactive/unfollowed drop out, `getFollowUri`, import candidate rules).
+
+### Decisions not in the spec
+
+- **`login` table** (`003_login`) to know "first login" server-side, so the import shows once per account, not once per device (iOS home-screen apps have separate cookies). It isn't user content and isn't part of the rebuildable index (the rebuild script leaves it alone); losing it only means the import is offered once more. Your DID has no row yet, so **your next sign-in counts as a first login**.
+- Import list is fetched client-side (reading follows takes ~0.4 s for 256 follows; bigger accounts are slower), so there's a real loading/error state.
+- Bluesky follows are capped at 10,000 (100 pages). Past that, the rest are ignored.
+- The import POST only follows accounts that are candidates at that moment; arbitrary DIDs can't be bulk-followed through it.
+- Unfollow isn't confirmed with a dialog (§6.6 asks confirmation for deleting cooks/comments only).
+- Button label is "Follow all" when everything is selected, "Follow N" otherwise.
+- Sign out now lives on your own profile.
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 93/93. `pnpm test:e2e`: 8/8. The following-feed test was mutation-checked (dropping the own-cooks clause fails it).
+- `listBskyFollows` live against the human's PDS (`matsutake.us-west.host.bsky.network`): 256 DIDs, identical to a direct paginated `listRecords` count.
+- curl, signed out: `/api/follow` POST, `/api/follow/import` GET/POST, `/api/feed?feed=following` → 401; `/following`, `/import` → 307 to sign-in.
+- **Live writes to the human's repo (approved), minted cookie, through the dev server:**
+  - Follow: invalid subject/self/bad rkey/junk → 400; follow → 200; `getRecord` fields correct; retry → same uri, still 1 record. **Lost-response path:** deleted the index row, re-POSTed the same rkey → 200 same uri, PDS still 1 record with the original `createdAt`.
+  - **Tap, not only read-your-own-writes:** deleted the row, then Tap `/repos/remove` + `/repos/add` → row back in 3 s with the same uri/createdAt. Every follow/unfollow was followed by a `POST /api/webhook 200` in the dev log.
+  - Unfollow → `getRecord` RecordNotFound, row gone; second unfollow → `{deleted: null}`.
+  - Import (with 2 **local-only fixture** accounts+cooks for two real Bluesky follows, since the human is the only cook author): subjects `[F1, F2, F1 dup, self, non-candidate]` → `{followed: 2}`, one `applyWrites` with 2 creates works under the granular `repo:` scope; `listRecords` shows both; repeat import → `{followed: 0}`; candidate list then empty; following feed shows their cooks. Wiped rows → Tap backfill restored both in 2 s.
+  - Cleanup: all follow records deleted (PDS `listRecords` empty, `follow` table empty); fixtures removed.
+- Playwright at 375px, light + dark (throwaway specs, deleted): `/following` (feed + active tab), own profile (import link + sign out, no follow button), other profile (Follow), `/import` (2 pre-selected, Follow all → Follow 1 → Follow 0 disabled, back button), `/import?first=1` (no back, Skip → /global), empty following feed (cookie for a DID with nothing). No horizontal scroll, no console errors, no failed images. Screenshots reviewed. UI round trip: Following→Follow on both profiles, Follow all → lands on `/following` with their cooks, unfollow again.
+- Image proxy after the `lib/pds.ts` move: forced cache miss on the avatar → 200 WebP.
+- **Not verified:** the first-login redirect through a real OAuth sign-in (needs the human; see next step). Phone testing of this phase.
+
+### Known issues
+
+- A duplicate follow record (e.g. two devices following at once) is kept out of the index by keep-earliest; unfollow deletes only the indexed one, so the duplicate resurfaces after a rebuild. Same known edge as kudos (Phase 3).
+- A lost response on an import batch followed by a retry can create duplicate follow records (the batch rkeys are server-generated). Same effect as above.
+- Carried: quick-tunnel URL changes; `auth_state` never pruned; Lexicon `mealType` minLength decision still open; Tap's webhook retry has no visible backoff.
+
+### Next step
+
+Human reviews the Phase 4 checkpoint and does the manual steps (sign out, sign in from the installed app → lands on Global via the first-login import skip; Follow/Unfollow from a profile if a second cook author exists). Then commit/PR. Then Phase 5: kudos, comments, delete, orphan hiding.
+
+---
+
+## Phase 3 — Sync, global feed, profiles, images ✅ complete (merged, PR #4)
 
 Branch: `feature/phase-3`
 

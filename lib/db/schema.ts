@@ -6,6 +6,7 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>;
 export interface DatabaseSchema {
   auth_state: AuthStateTable;
   auth_session: AuthSessionTable;
+  login: LoginTable;
   account: AccountTable;
   cook: CookTable;
   kudos: KudosTable;
@@ -26,6 +27,12 @@ export interface AuthSessionTable {
   key: string;
   value: string;
   updatedAt: Timestamp;
+}
+
+// First sign-in per DID (the one-time import offer, §6.3). Not index data.
+export interface LoginTable {
+  did: string;
+  firstAt: Timestamp;
 }
 
 // ---- Index tables (§6.2): rebuildable copies of PDS records. ----

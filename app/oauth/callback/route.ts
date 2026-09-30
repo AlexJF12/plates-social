@@ -6,6 +6,7 @@ import {
   encodeSessionCookie,
   getSessionSecret,
 } from "@/lib/auth/cookie";
+import { getDb } from "@/lib/db";
 import { getTap } from "@/lib/tap";
 
 export async function GET(request: NextRequest) {
@@ -29,7 +30,23 @@ export async function GET(request: NextRequest) {
     console.error(`Tap addRepos failed for ${did}:`, error);
   }
 
-  const response = NextResponse.redirect(new URL("/", PUBLIC_URL));
+  // First sign-in → offer the Bluesky import once (§6.3). If recording it
+  // fails, fall through to the normal landing rather than failing sign-in.
+  let firstLogin = false;
+  try {
+    const inserted = await getDb()
+      .insertInto("login")
+      .values({ did })
+      .onConflict((oc) => oc.column("did").doNothing())
+      .executeTakeFirst();
+    firstLogin = Number(inserted.numInsertedOrUpdatedRows) > 0;
+  } catch (error) {
+    console.error(`recording first login failed for ${did}:`, error);
+  }
+
+  const response = NextResponse.redirect(
+    new URL(firstLogin ? "/import?first=1" : "/", PUBLIC_URL),
+  );
   response.cookies.set(
     SESSION_COOKIE,
     encodeSessionCookie(did, getSessionSecret()),
