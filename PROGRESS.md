@@ -1,6 +1,6 @@
 # Progress
 
-## Current phase: 6.6 — Handle typeahead, best cook, search ⏳ built, awaiting the human's iPhone review (2026-09-30)
+## Current phase: 6.6 — Handle typeahead, best cook, search ✅ approved by the human on the iPhone, PR #10 open (2026-09-30)
 
 Branch: `feature/phase-6.6` (from main after PR #8/#9). Spec: SPEC §8 Phase 6.6; §2.1, §2.2 and §7 updated to match what was built.
 
@@ -36,17 +36,16 @@ Branch: `feature/phase-6.6` (from main after PR #8/#9). Spec: SPEC §8 Phase 6.6
 - **Live typeahead against the real Bluesky API** (Playwright, not stubbed): typing "alexjf" → one request `q=alexjf&limit=6`, 6 real suggestions with the human's account first; ArrowDown sets `aria-activedescendant`; Escape hides the list.
 - EXPLAIN: on the fixture data (10 cooks) Postgres seq-scans everything, as expected. With 50k synthetic cooks / 2k accounts in a rolled-back transaction: a common term ("risot") walks `cook_sort_idx` and stops at 21 rows (0.3ms); a rare term uses `cook_dish_trgm_idx` (1.3ms); people use `account_name_trgm_idx` (0.6ms); best-of-month uses `cook_local_date_idx` + `kudos_subject_idx` (5ms). Full plans: `explain-big.txt` in this session's scratchpad.
 - Playwright screenshots at 375px, light + dark, signed in with a minted cookie for the human's DID: search (hint, results, people, meal filter, no match), Best (current month, August, empty June with Previous disabled), global feed and cook detail with badges, Maya's profile with "Best cooks", own profile, sign-in with live suggestions. No console errors, no horizontal scroll. Search → open a cook → Back keeps the query, filter and results.
-- **Not verified:** real iPhone (typeahead with the iOS keyboard open, Best tab, badges, search in the installed PWA) — the human's step below. Nothing in this phase writes to a PDS, so no `getRecord`/Tap checks apply.
+- **Verified by the human on the iPhone** (installed PWA via the tunnel): typeahead with the keyboard open, the Best tab and badges, and search. Approved. Nothing in this phase writes to a PDS, so no `getRecord`/Tap checks apply.
 
-### Local-only fixture rows (still in the DB for the human's review)
+### Local-only fixture rows (removed)
 
-Every DID starts `did:plc:fixture`, every rkey contains `3mwpfix`: Maya Okafor, Theo Park, Rosa Quintero; 8 cooks (Jul–Sep 2026) reusing the human's cached image CIDs; 13 kudos, two of them on BLT and Bleeg. Plus (added at the human's request) 12 more accounts (Priya, Sam, Lena, Kofi, Hana, Diego, Nora, Omar, June, Felix, Amara, Ben; `*.fixture.test`) with 3 cooks each (one each in Jul, Aug, Sep) and 90 kudos among them. Their photos and avatars are emoji-on-a-plate images rendered with Chromium and written straight into the proxy's disk cache (`.cache/img/<cid>-{thumb,full,avatar}.webp`, CIDs computed from the JPEG bytes); nothing was uploaded to any PDS. Those cache files are harmless but can be removed with `rm -rf .cache/img` (real images re-fetch on demand). Without them the Best tab and badges have nothing to show (the real index has no kudos). Remove after the review:
+Used for screenshots and the iPhone review, then removed after approval; the index is back to 2 cooks, 1 account, no kudos/comments/follows (checked), and the 48 emoji images were deleted from `.cache/img` (the real photos' cache files are kept). For next time: every fixture DID started `did:plc:fixture`, every rkey contained `3mwpfix`. There were 15 accounts (Maya, Theo, Rosa, plus 12 with emoji avatars) and 44 cooks (Jul–Sep 2026), with kudos among them and on BLT and Bleeg. Emoji photos were rendered with Chromium and written straight into the proxy's disk cache (`<cid>-{thumb,full,avatar}.webp`, CIDv1 raw sha256 of the JPEG bytes), so nothing was uploaded. Cleanup SQL:
 ```sql
 DELETE FROM kudos WHERE uri LIKE '%3mwpfix%' OR "authorDid" LIKE 'did:plc:fixture%' OR "subjectUri" LIKE '%did:plc:fixture%';
 DELETE FROM cook WHERE "authorDid" LIKE 'did:plc:fixture%';
 DELETE FROM account WHERE did LIKE 'did:plc:fixture%';
 ```
-(`docker exec -i plates-social-postgres-1 psql -U cooklog -d cooklog`); the index should then be back to 2 cooks, 1 account, no kudos.
 
 ### Known issues
 
@@ -56,7 +55,7 @@ DELETE FROM account WHERE did LIKE 'did:plc:fixture%';
 
 ### Next step
 
-Human, on the iPhone (tunnel URL, installed app): sign out, type in the handle field with the keyboard open (list should sit above the field, fully visible) and tap a suggestion; the Best tab (Sep "Leading so far", ‹ to Aug/Jul, badges on Maya's carbonara and focaccia, Maya's profile "Best cooks"); Search (type "carb", "creme", "ma", the meal chips, open a cook and go Back). Then approve, remove the fixture rows (above), and merge the PR. Phase 7 is blocked until the human provides a domain.
+Human: merge PR #10. Phase 7 is blocked until the human provides a domain.
 
 ---
 
