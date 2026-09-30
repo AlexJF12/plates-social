@@ -10,6 +10,10 @@ const nextConfig: NextConfig = {
   // As in the Statusphere example: keep Tap's logger out of the bundle.
   serverExternalPackages: ["@atproto/tap", "thread-stream", "pino"],
   allowedDevOrigins: devOrigins,
+  // Browsers should always fetch the latest service worker (§7.1).
+  async headers() {
+    return [{ source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache" }] }];
+  },
 };
 
 export default nextConfig;

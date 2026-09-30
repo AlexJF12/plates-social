@@ -1,10 +1,11 @@
 import type { Kysely } from "kysely";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { COLLECTIONS } from "../config";
 import { getDb } from ".";
 import {
   getAccount,
   getComments,
+  getCookDayCounts,
   getCookDetail,
   getCookFeed,
   getFollowUri,
@@ -293,6 +294,97 @@ describe("getKudosUri", () => {
       expect(await getKudosUri(BOB, subject, db)).toBe(uri);
       expect(await getKudosUri(ALICE, subject, db)).toBeNull();
       expect(await getKudosUri(BOB, cookUri(ALICE, 1), db)).toBeNull();
+    });
+  });
+});
+
+describe("DENYLIST_DIDS (§7)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("hides the account, its cooks, kudos and comments everywhere, and brings them back when removed", async () => {
+    await inRollback(async (db) => {
+      await seed(db, ALICE, 1, () => new Date("2020-01-01T00:00:00Z"));
+      await seed(db, BOB, 1, () => new Date("2020-01-01T00:00:00Z"));
+      const subjectUri = cookUri(ALICE, 0);
+      await db
+        .insertInto("kudos")
+        .values({ uri: `at://${BOB}/${COLLECTIONS.kudos}/${rkey(0)}`, authorDid: BOB, subjectUri, subjectCid: CID, createdAt: new Date() })
+        .execute();
+      await db
+        .insertInto("comment")
+        .values({ uri: `at://${BOB}/${COLLECTIONS.comment}/${rkey(0)}`, authorDid: BOB, subjectUri, text: "Nice", createdAt: new Date(), sortAt: new Date() })
+        .execute();
+      await addFollow(db, ALICE, BOB);
+      await addFollow(db, CAROL, BOB);
+      await db.insertInto("account").values({ did: CAROL, handle: HANDLES[CAROL] }).execute();
+
+      const bobVisible = async () => ({
+        global: (await getCookFeed({ db })).items.some((c) => c.author.did === BOB),
+        following: (await getCookFeed({ db, followedBy: ALICE })).items.some((c) => c.author.did === BOB),
+        profile: (await getAccount(BOB, db)) !== null,
+        byHandle: (await getAccount("bob.test", db)) !== null,
+        detail: (await getCookDetail(BOB, rkey(0), db)) !== null,
+        cook: (await getVisibleCook(cookUri(BOB, 0), db)) !== null,
+        counts: (await getCookFeed({ db, authorDid: ALICE })).items.map((c) => [c.kudosCount, c.commentCount]),
+        kudos: (await getCookDetail(ALICE, rkey(0), db))!.kudos.length,
+        comments: (await getComments({ cookUri: subjectUri, db })).items.length,
+        import: (await getImportCandidates(DAVE, [BOB], db)).length,
+        days: (await getCookDayCounts(BOB, { from: "2020-01-01", to: "2020-01-01" }, db)).length,
+      });
+      const shown = { global: true, following: true, profile: true, byHandle: true, detail: true, cook: true, counts: [[1, 1]], kudos: 1, comments: 1, import: 1, days: 1 };
+      expect(await bobVisible()).toEqual(shown);
+
+      // Invalid entries and separators are tolerated.
+      vi.stubEnv("DENYLIST_DIDS", ` not-a-did, ${DAVE}\n${BOB} `);
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      expect(await bobVisible()).toEqual({
+        global: false, following: false, profile: false, byHandle: false, detail: false, cook: false,
+        counts: [[0, 0]], kudos: 0, comments: 0, import: 0, days: 0,
+      });
+      // Others are unaffected.
+      expect((await getCookFeed({ db, authorDid: ALICE })).items).toHaveLength(1);
+
+      vi.stubEnv("DENYLIST_DIDS", "");
+      expect(await bobVisible()).toEqual(shown);
+    });
+  });
+});
+
+describe("getCookDayCounts", () => {
+  it("counts cooks per author-local date within the window", async () => {
+    await inRollback(async (db) => {
+      await seed(db, ALICE, 0, () => new Date());
+      await seed(db, BOB, 1, () => new Date("2026-09-28T12:00:00Z"));
+      const cooks: [string, string][] = [
+        ["2026-09-27T22:30:00-04:00", "2026-09-27"], // Mon 02:30 UTC, still Sunday for the author
+        ["2026-09-28T07:00:00+09:00", "2026-09-28"], // Sun 22:00 UTC, already Monday for the author
+        ["2026-09-28T19:00:00+09:00", "2026-09-28"],
+        ["2026-08-31T12:00:00Z", "2026-08-31"], // outside the window
+      ];
+      for (const [i, [cookedAt, cookedLocalDate]] of cooks.entries()) {
+        const at = new Date(cookedAt);
+        await db
+          .insertInto("cook")
+          .values({
+            uri: cookUri(ALICE, i),
+            cid: CID,
+            authorDid: ALICE,
+            dishName: "Dish",
+            mealType: "dinner",
+            images: JSON.stringify([]),
+            cookedAt,
+            cookedAtUtc: at,
+            cookedLocalDate,
+            createdAt: at,
+            indexedAt: at,
+            sortAt: at,
+          })
+          .execute();
+      }
+      expect(await getCookDayCounts(ALICE, { from: "2026-09-01", to: "2026-10-31" }, db)).toEqual([
+        { date: "2026-09-27", count: 1 },
+        { date: "2026-09-28", count: 2 },
+      ]);
     });
   });
 });

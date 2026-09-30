@@ -1,16 +1,23 @@
 import { isValidDid, isValidHandle } from "@atproto/syntax";
 import { type Kysely, sql } from "kysely";
 import { COLLECTIONS } from "../config";
+import type { DayCount } from "../cook/stats";
+import { denylist } from "../denylist";
 import { getDb } from ".";
 import type { CookImage, DatabaseSchema } from "./schema";
 
 type Db = Kysely<DatabaseSchema>;
 
 // Read side of the index. Pages read only from here (§3). Content from
-// inactive accounts (takendown, suspended, deactivated) is hidden
-// everywhere: every query joins `account` and requires active.
+// inactive accounts (takendown, suspended, deactivated) and denylisted
+// ones is hidden everywhere: every query joins `account` and requires
+// visibleAccount.
 
 export const PAGE_SIZE = 20;
+
+// The account (table or alias) is active and not on DENYLIST_DIDS.
+export const visibleAccount = (table: string) =>
+  sql<boolean>`${sql.ref(`${table}.active`)} and not (${sql.ref(`${table}.did`)} = any(${denylist()}::text[]))`;
 
 export type Author = {
   did: string;
@@ -52,7 +59,7 @@ function cookQuery(db: Db) {
   return db
     .selectFrom("cook")
     .innerJoin("account", "account.did", "cook.authorDid")
-    .where("account.active", "=", true)
+    .where(visibleAccount("account"))
     .select((eb) => [
       "cook.uri",
       "cook.dishName",
@@ -68,14 +75,14 @@ function cookQuery(db: Db) {
       eb
         .selectFrom("kudos")
         .innerJoin("account as ka", "ka.did", "kudos.authorDid")
-        .where("ka.active", "=", true)
+        .where(visibleAccount("ka"))
         .whereRef("kudos.subjectUri", "=", "cook.uri")
         .select(sql<number>`count(*)::int`.as("n"))
         .as("kudosCount"),
       eb
         .selectFrom("comment")
         .innerJoin("account as ca", "ca.did", "comment.authorDid")
-        .where("ca.active", "=", true)
+        .where(visibleAccount("ca"))
         .whereRef("comment.subjectUri", "=", "cook.uri")
         .select(sql<number>`count(*)::int`.as("n"))
         .as("commentCount"),
@@ -146,7 +153,7 @@ export async function getAccount(actor: string, db: Db = getDb()): Promise<Autho
   const row = await db
     .selectFrom("account")
     .select(["did", "handle", "displayName", "avatarCid"])
-    .where("active", "=", true)
+    .where(visibleAccount("account"))
     .where(did ? "did" : "handle", "=", did ? actor : actor.toLowerCase())
     // A stale row can still hold a handle that has moved to another DID.
     .orderBy("updatedAt", "desc")
@@ -179,7 +186,7 @@ export async function getComments(opts: {
   let q = db
     .selectFrom("comment")
     .innerJoin("account", "account.did", "comment.authorDid")
-    .where("account.active", "=", true)
+    .where(visibleAccount("account"))
     .where("comment.subjectUri", "=", opts.cookUri)
     .where((eb) => eb.exists(cookQuery(db).where("cook.uri", "=", opts.cookUri)))
     .select([...authorCols, "comment.uri", "comment.text", "comment.sortAt"])
@@ -213,7 +220,7 @@ export async function getVisibleCook(uri: string, db: Db = getDb()) {
     (await db
       .selectFrom("cook")
       .innerJoin("account", "account.did", "cook.authorDid")
-      .where("account.active", "=", true)
+      .where(visibleAccount("account"))
       .where("cook.uri", "=", uri)
       .select(["cook.uri", "cook.cid", "cook.authorDid"])
       .executeTakeFirst()) ?? null
@@ -229,7 +236,7 @@ export async function getCookDetail(did: string, rkey: string, db: Db = getDb())
     db
       .selectFrom("kudos")
       .innerJoin("account", "account.did", "kudos.authorDid")
-      .where("account.active", "=", true)
+      .where(visibleAccount("account"))
       .where("kudos.subjectUri", "=", uri)
       .select(authorCols)
       .orderBy("kudos.createdAt", "asc")
@@ -273,7 +280,7 @@ export async function getImportCandidates(
   return db
     .selectFrom("account")
     .select(["did", "handle", "displayName", "avatarCid"])
-    .where("active", "=", true)
+    .where(visibleAccount("account"))
     // One array parameter, however many follows (IN would need one each).
     .where(sql<boolean>`did = any(${dids}::text[])`)
     .where("did", "!=", viewer)
@@ -292,5 +299,25 @@ export async function getImportCandidates(
       ),
     )
     .orderBy(sql`lower(coalesce("displayName", handle, did))`)
+    .execute();
+}
+
+// Cooks per local day (cookedLocalDate) in [from, to], for profile stats
+// (§6.4). The browser buckets these into its own week and month.
+export async function getCookDayCounts(
+  did: string,
+  window: { from: string; to: string },
+  db: Db = getDb(),
+): Promise<DayCount[]> {
+  return db
+    .selectFrom("cook")
+    .innerJoin("account", "account.did", "cook.authorDid")
+    .where(visibleAccount("account"))
+    .where("cook.authorDid", "=", did)
+    .where("cook.cookedLocalDate", ">=", window.from)
+    .where("cook.cookedLocalDate", "<=", window.to)
+    .select(["cook.cookedLocalDate as date", sql<number>`count(*)::int`.as("count")])
+    .groupBy("cook.cookedLocalDate")
+    .orderBy("cook.cookedLocalDate")
     .execute();
 }

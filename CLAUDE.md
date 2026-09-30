@@ -50,6 +50,12 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Playwright screenshots of pages with a textarea: pass `caret: "initial"`. The default hides the caret by injecting a style, and a screenshot taken before hydration then logs a hydration mismatch.
 - `deleteRecord` on a record that's already gone succeeds, so delete routes can be retried freely.
 - The only indexed cook author locally is the human, so screens needing other people (import list, other profiles) need local-only fixture rows; remove them afterwards.
+- Account visibility is `visibleAccount(table)` in `lib/db/queries.ts` (active + not on `DENYLIST_DIDS`). Use it for every new read, never a bare `active = true`.
+- Error boundaries in this Next get `retry` (not `reset`). A non-component export from a `"use client"` file becomes a client reference on the server: put shared constants in a plain module.
+- With a route `loading.tsx`, `redirect()` in the page happens mid-stream (200 + meta refresh); sign-in redirects belong in `(app)/layout.tsx` too.
+- The service worker caches only `/offline`; bump `CACHE` in `public/sw.js` when that page changes. Playwright's iPhone UA shows the iOS install hint: set `localStorage.installHintDismissed = "1"` via `addInitScript` for screenshots.
+- Next's dev "N" indicator covers the Following tab at 375px: in Playwright use `dispatchEvent("click")` there.
+- To see loading/error states for real: `docker pause` (skeletons) / `docker stop` (error boundary) the Postgres container, then restart it.
 
 ---
 

@@ -4,6 +4,7 @@ import { isCidForBytes, parseCidSafe } from "@atproto/lex";
 import { sql } from "kysely";
 import sharp from "sharp";
 import { getDb } from "../db";
+import { visibleAccount } from "../db/queries";
 import { resolvePds } from "../pds";
 import type { ImageSize } from "./url";
 
@@ -35,7 +36,7 @@ export async function isReferenced(did: string, cid: string): Promise<boolean> {
     .selectFrom("account")
     .select("did")
     .where("did", "=", did)
-    .where("active", "=", true)
+    .where(visibleAccount("account"))
     .where((eb) =>
       eb.or([
         eb("avatarCid", "=", cid),
