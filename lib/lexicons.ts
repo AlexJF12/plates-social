@@ -7,3 +7,6 @@ export * as kudos from "./lexicons-gen/com/example/cooklog/kudos";
 export * as comment from "./lexicons-gen/com/example/cooklog/comment";
 export * as follow from "./lexicons-gen/com/example/cooklog/follow";
 export * as strongRef from "./lexicons-gen/com/atproto/repo/strongRef";
+// Read-only: display name and avatar come from the user's Bluesky profile
+// (§4). Installed with `lex install app.bsky.actor.profile`.
+export * as bskyProfile from "./lexicons-gen/app/bsky/actor/profile";

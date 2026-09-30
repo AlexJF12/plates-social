@@ -13,6 +13,7 @@
     "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down",
     "migrate": "tsx --env-file=.env.local scripts/migrate.ts",
+    "rebuild-index": "tsx --env-file=.env.local scripts/rebuild-index.mts",
     "lex:build": "lex build --import-ext \"\" --out ./lib/lexicons-gen --clear",
     "gen-key": "tsx scripts/gen-key.mts",
     "gen-icons": "tsx scripts/gen-icons.ts",

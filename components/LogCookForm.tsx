@@ -170,7 +170,9 @@ export function LogCookForm() {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || `Posting failed (${res.status})`);
 
-      router.push("/following");
+      // at://did/collection/rkey -> the new cook's page.
+      const [, , did, , rk] = String(data.uri).split("/");
+      router.push(`/cook/${did}/${rk}`);
       router.refresh();
     } catch (err) {
       const message =

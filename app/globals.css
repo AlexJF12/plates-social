@@ -36,6 +36,17 @@
     "Helvetica Neue", Arial, sans-serif;
 }
 
+/*
+ * The page itself never scrolls sideways; only carousels do. Without this,
+ * iOS let a swipe on a photo pan the whole screen and leave it offset.
+ * `clip` (not `hidden`) so body doesn't become a scroll container, which
+ * would break the sticky header.
+ */
+html,
+body {
+  overflow-x: clip;
+}
+
 html {
   color-scheme: light dark;
   /* No grey flash on tap in iOS standalone mode. */

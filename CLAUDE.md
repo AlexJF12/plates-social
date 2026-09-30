@@ -13,6 +13,7 @@ Node 22 is required (`nvm use` picks it up from `.nvmrc`; Node 24 breaks Next.js
 | Install | `pnpm install` |
 | Postgres (Docker) up / down | `pnpm db:up` / `pnpm db:down` |
 | Migrations | `pnpm migrate` |
+| Rebuild the index from Tap (dry run without `--yes`; see README) | `pnpm rebuild-index --yes` |
 | Regenerate Lexicon code (after editing `lexicons/`) | `pnpm lex:build` |
 | Dev server (http://127.0.0.1:3000) | `pnpm dev` |
 | Tap (needs `go install github.com/bluesky-social/indigo/cmd/tap@latest`) | `pnpm tap` |
@@ -39,6 +40,11 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - iOS Safari's canvas JPEG encoder writes its own small EXIF block. Never reject "any EXIF" — `lib/image/verify.ts` strips JPEG metadata losslessly instead.
 - Next renders an empty `role="alert"` (route announcer): in Playwright, scope alert lookups to the form.
 - Quick tunnels die when the laptop sleeps; a new URL = new client_id = sign in again + re-install the PWA.
+- Webhook indexing lives in `lib/indexer/` (`indexEvent`). Every write there is an idempotent single statement (no transactions), so tests can wrap it in `inRollback` (`lib/db/testing.ts`) against the real local Postgres.
+- Feeds inner-join `account` and require `active`: any path that indexes content must `ensureAccount` first.
+- Tap admin POSTs need `Content-Type: application/json`, or Tap binds an empty DID list (remove "succeeds" with count 0; add returns 500 "empty slice").
+- In zsh, `curl $A` with `A="-u x:y"` passes one argument; inline `-u admin:$TAP_ADMIN_PASSWORD`.
+- Playwright on signed-in pages: the human approved minting a session cookie for their DID (HMAC with `SESSION_SECRET`), injected in the test context only, never committed.
 
 ---
 

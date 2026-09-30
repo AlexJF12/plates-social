@@ -5,6 +5,7 @@ import { getSession } from "@/lib/auth/session";
 import { COLLECTIONS } from "@/lib/config";
 import { MEAL_TYPES } from "@/lib/cook/mealTypes";
 import { getDb } from "@/lib/db";
+import { ensureAccount } from "@/lib/indexer/account";
 import { cookRow, upsertCook } from "@/lib/indexer/cook";
 import { cook } from "@/lib/lexicons";
 
@@ -101,6 +102,8 @@ export async function POST(request: NextRequest) {
 
   // The post is on the PDS either way; if this fails, Tap indexes it later.
   try {
+    // Feeds join on account; Tap's identity event fills in the handle.
+    await ensureAccount(getDb(), session.did);
     await upsertCook(getDb(), cookRow({ uri, cid, authorDid: session.did, record }));
   } catch (err) {
     console.error("read-your-own-writes upsert failed", uri, err);
