@@ -72,7 +72,7 @@ The human you are working with reads and reviews code comfortably. Keep explanat
 ### 2.1 In scope for v1
 
 - **Installable as a PWA.** No app stores. People add it to their phone's home screen from Safari (iOS) or Chrome (Android), and it opens full-screen like a native app. See §7.1.
-- **Sign in** with an existing atproto account (handle input → OAuth), including from the installed home-screen app.
+- **Sign in** with an existing atproto account (handle input → OAuth), including from the installed home-screen app. The handle field suggests accounts as you type (Bluesky's public `searchActorsTypeahead`, called from the browser); tapping one signs in.
 - **Log a cook**: 1–4 photos (at least one required), dish name, meal type, optional note, and when it was cooked (defaults to now, editable).
 - **Global feed**: every cook indexed from the whole network, newest first.
 - **Following feed**: cooks from people you follow in this app, plus your own.
@@ -82,10 +82,12 @@ The human you are working with reads and reviews code comfortably. Keep explanat
 - **Kudos** (toggle on/off) and **comments** (flat, no threading).
 - **Delete**: you can delete your own cooks and your own comments. No editing.
 - **Stats**: number of cooks this week and this month.
+- **Best cook** (Phase 6.6): per calendar month (the author's local month) and known meal type, the cook with the most distinct kudos authors (not self, visible accounts only; ≥ 1 to win; ties by earliest `cookedAt`, then lowest `uri`). Computed from the index on read, never stored. A Best tab per month (`/best/YYYY-MM`), a badge on winning cooks for completed months, and a "Best cooks" row on profiles.
+- **Search** (Phase 6.6, `/search?q=&meal=`): dish names (case- and accent-insensitive substring) with a meal-type filter, plus people by display name or handle.
 
 ### 2.2 Explicitly out of scope
 
-Editing cooks, streaks, heatmaps, any other stats, recipes, ingredients, tags, cooking time, cross-posting to Bluesky, notifications (including web push), search, DMs, video, native mobile apps or app store builds, offline posting, moderation tooling beyond the denylist in §7.
+Editing cooks, streaks, heatmaps, any other stats, recipes, ingredients, tags, cooking time, cross-posting to Bluesky, notifications (including web push), search beyond dish names and people (notes, comments, full-text ranking), DMs, video, native mobile apps or app store builds, offline posting, moderation tooling beyond the denylist in §7.
 
 ---
 
@@ -213,7 +215,11 @@ Deleting a cook or comment calls `deleteRecord`, removes the row immediately, an
 - Feed card: author row (avatar, name, then meal type and relative time underneath), then photos edge to edge on mobile (swipeable carousel with a pill of dots when there's more than one; crop to at most 4:5 in the feed, show the full aspect ratio on detail), then the dish name in the serif, the note truncated to 3 lines, and kudos/comment counts as icons. Cards are separated by an 8px `sunken` band, not hairlines.
 - Cook detail: the same author row, all photos, the dish name at `title` size, "Cooked …", the full note, then kudos and comments in banded sections. Deleting your own cook is a quiet icon in the header.
 - Profile: serif name, handle, stats as large serif figures with a small label ("cooks this week"), then the follow button (or, on your own, "Find people from Bluesky" and a quiet "Sign out").
-- Bottom tab bar: three labelled tabs, **Feed**, **Log** (primary, a filled accent pill, in the middle), **Profile**. Feed reopens whichever feed you last used. The feed header is a two-segment switch, Following | Global; the two feeds stay separate pages (`/following`, `/global`).
+- Bottom tab bar: five labelled tabs, **Feed** (`Rows3`), **Search** (`Search`), **Log** (`Plus`, primary, a filled accent pill, in the middle), **Best** (`Trophy`), **Profile** (`User`); each ≥ 44px wide at 375px and active on its own routes. Feed reopens whichever feed you last used. Best opens the viewer's current month (resolved in the browser). The feed header is a two-segment switch, Following | Global; the two feeds stay separate pages (`/following`, `/global`).
+- Search: a sticky header with the field (search icon, clear button) and a horizontally scrolling row of meal `chip()`s ("All" first). Before typing, an `EmptyState` hint. People rows (avatar 44, name, handle) above standard feed cards; no people while a meal is picked.
+- Best: a sticky month switcher (‹ September 2026 ›, serif), a muted status line ("Leading so far…" for a running month), then one row per meal type: a 104px rounded photo, the meal name (small, muted), the dish in the serif, the author (avatar 24) and the kudos count (`ChefHat`); categories without a winner are a quiet "No winner yet" row. A month with no winners is an `EmptyState` pointing to the global feed.
+- Badges: a `Trophy` line, "Best dinner, Sep 2026" (`text-small`, semibold, ink), above the dish name on feed cards and the detail page. Profiles list wins as `chip(false)` links under the stats.
+- Sign-in typeahead: an accessible combobox; the list (surface, border, `rounded-control`, rows ≥ 52px with avatar, name and handle) opens **above** the field so the iOS keyboard doesn't cover it.
 - Log flow: photo picker first (camera or library), then dish name, meal type as tappable chips, note, and when it was cooked. The submit button shows upload progress.
 - Pressed states on everything tappable (scale or tint, `motion-safe` only). CSS transitions only; no animation library.
 - Tap targets ≥ 44px. Respect `prefers-color-scheme` for dark mode. Every list has a useful empty state (e.g. the Following feed with no follows points to the import and the global feed).

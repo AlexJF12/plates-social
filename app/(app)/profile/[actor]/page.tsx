@@ -1,4 +1,4 @@
-import { Users } from "lucide-react";
+import { Trophy, Users } from "lucide-react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
@@ -7,11 +7,13 @@ import { FollowButton } from "@/components/FollowButton";
 import { LogoutButton } from "@/components/LogoutButton";
 import { PageHeader } from "@/components/PageHeader";
 import { ProfileStats } from "@/components/ProfileStats";
-import { EmptyState, button } from "@/components/ui";
+import { EmptyState, button, chip } from "@/components/ui";
 import { getDid } from "@/lib/auth/session";
+import { formatMonth } from "@/lib/cook/best";
+import { mealTypeLabel } from "@/lib/cook/mealTypes";
 import { statsWindow } from "@/lib/cook/stats";
-import { getAccount, getCookDayCounts, getCookFeed, getFollowUri } from "@/lib/db/queries";
-import { displayName } from "@/lib/links";
+import { getAccount, getAuthorBadges, getCookDayCounts, getCookFeed, getFollowUri } from "@/lib/db/queries";
+import { cookPath, displayName } from "@/lib/links";
 
 // A person's stats and cooks, newest first. [actor] is a handle or a DID.
 // Others get a follow button; your own has the Bluesky import and sign-out.
@@ -21,10 +23,11 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
   const account = await getAccount(decodeURIComponent((await params).actor));
   if (!account) notFound();
   const isMe = account.did === viewer;
-  const [initial, days, followUri] = await Promise.all([
+  const [initial, days, followUri, wins] = await Promise.all([
     getCookFeed({ authorDid: account.did }),
     getCookDayCounts(account.did, statsWindow()),
     isMe ? null : getFollowUri(viewer, account.did),
+    getAuthorBadges(account.did),
   ]);
 
   return (
@@ -41,6 +44,23 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
           </div>
         </section>
         <ProfileStats days={days} />
+        {wins.length > 0 && (
+          <section aria-labelledby="best-cooks" className="px-4 pb-5" data-testid="best-cooks">
+            <h2 id="best-cooks" className="mb-2 text-small font-semibold text-muted">
+              Best cooks
+            </h2>
+            <ul className="flex flex-wrap gap-2">
+              {wins.map((w) => (
+                <li key={`${w.month}-${w.mealType}`}>
+                  <Link href={cookPath(account.did, w.uri.slice(w.uri.lastIndexOf("/") + 1))} className={chip(false)}>
+                    <Trophy size={16} strokeWidth={2} className="mr-1.5" aria-hidden />
+                    {mealTypeLabel(w.mealType)}, {formatMonth(w.month, "short")}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
         <section className="flex flex-col gap-1 px-4 pb-5">
           {isMe ? (
             <>

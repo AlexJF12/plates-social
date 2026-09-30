@@ -165,6 +165,42 @@ const migrations: Record<string, Migration> = {
       await db.schema.dropTable("login").execute();
     },
   },
+
+  // Search and best cook (Phase 6.6). Indexes only: results are computed
+  // from the index on read, never stored.
+  "004_search": {
+    async up(db: Kysely<unknown>) {
+      await sql`create extension if not exists pg_trgm`.execute(db);
+      await sql`create extension if not exists unaccent`.execute(db);
+      // unaccent() is only STABLE (its dictionary could change), so it can't
+      // go in an index. This wrapper pins the dictionary and is IMMUTABLE,
+      // the standard workaround. Search compares immutable_unaccent(column)
+      // with immutable_unaccent(pattern), so "creme" finds "Crème brûlée".
+      await sql`
+        create or replace function immutable_unaccent(text) returns text
+        language sql immutable parallel safe strict
+        as $$ select public.unaccent('public.unaccent'::regdictionary, $1) $$
+      `.execute(db);
+      // Dish-name substring search (ILIKE '%…%').
+      await sql`
+        create index cook_dish_trgm_idx on cook
+        using gin (immutable_unaccent("dishName") gin_trgm_ops)
+      `.execute(db);
+      // People search: display name and handle in one expression.
+      await sql`
+        create index account_name_trgm_idx on account
+        using gin ((immutable_unaccent(coalesce("displayName", '') || ' ' || coalesce(handle, ''))) gin_trgm_ops)
+      `.execute(db);
+      // Best cook: every cook in a month, across authors.
+      await db.schema.createIndex("cook_local_date_idx").on("cook").column("cookedLocalDate").execute();
+    },
+    async down(db: Kysely<unknown>) {
+      await db.schema.dropIndex("cook_local_date_idx").execute();
+      await db.schema.dropIndex("account_name_trgm_idx").execute();
+      await db.schema.dropIndex("cook_dish_trgm_idx").execute();
+      await sql`drop function immutable_unaccent(text)`.execute(db);
+    },
+  },
 };
 
 export function getMigrator() {

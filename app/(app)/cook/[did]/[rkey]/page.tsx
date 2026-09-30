@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { Avatar } from "@/components/Avatar";
+import { BestBadge } from "@/components/BestBadge";
 import { CookComments } from "@/components/CookComments";
 import { CookKudos } from "@/components/CookKudos";
 import { DeleteCookButton } from "@/components/DeleteCookButton";
@@ -67,6 +68,7 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
         </div>
 
         <section className="px-4 pt-5 pb-6">
+          {cook.badge && <BestBadge badge={cook.badge} className="mb-2" />}
           <h2 className="font-display text-title text-balance break-words">{cook.dishName}</h2>
           <p className="mt-2 text-small text-muted">Cooked {formatCookedAt(cook.cookedAt)}</p>
           {cook.note && <p className="mt-4 text-lead break-words whitespace-pre-line">{cook.note}</p>}

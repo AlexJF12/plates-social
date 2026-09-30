@@ -77,3 +77,31 @@ export function CookSkeleton() {
     </div>
   );
 }
+
+// The Best tab: month header, status line, six rows.
+export function BestSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading">
+      <div className="mx-auto flex h-14 max-w-md items-center justify-center">
+        <div className={`h-6 w-44 ${bar}`} />
+      </div>
+      <main className="mx-auto w-full max-w-md">
+        <div className="px-4 pt-1 pb-3">
+          <div className={`h-4 w-4/5 ${bar}`} />
+        </div>
+        <div className="border-t border-border">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="flex gap-4 border-b border-border px-4 py-4">
+              <span className={`h-26 w-26 shrink-0 rounded-control ${bar}`} />
+              <div className="flex-1 space-y-2.5 pt-1">
+                <div className={`h-3.5 w-16 ${bar}`} />
+                <div className={`h-6 w-3/4 ${bar}`} />
+                <div className={`h-4 w-1/2 ${bar}`} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </main>
+    </div>
+  );
+}
