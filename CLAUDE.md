@@ -59,6 +59,9 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Don't stack a second color/background/weight class onto `button()` output to override it (which wins depends on CSS order, not class order): add a variant instead.
 - In screenshot scripts, never change DOM attributes (e.g. `img.loading`) before hydration: React logs a hydration mismatch. Scroll through the page to load lazy images, and bound any `img.decode()` wait.
 - To see loading/error states for real: `docker pause` (skeletons) / `docker stop` (error boundary) the Postgres container, then restart it.
+- Search/filter pages that update the URL with `history.replaceState` must initialise from `window.location`, not only props: on Back, Next re-renders from the cached payload of the URL the page was first loaded with.
+- Dish/people search compares `immutable_unaccent(column) ILIKE immutable_unaccent(pattern)` so the trigram indexes (migration 004) apply; build patterns with `containsPattern` (escapes `\ % _`).
+- EXPLAIN on the tiny local index always shows seq scans; to check an index, insert synthetic rows inside `BEGIN … ROLLBACK` and `ANALYZE` first.
 
 ---
 

@@ -5,17 +5,23 @@ import type { CookView, FeedPage } from "@/lib/db/queries";
 import { CookCard } from "./CookCard";
 import { button } from "./ui";
 
-// Infinite scroll over /api/feed (§6.2). The first page is rendered on the
-// server and passed in; later pages load as the sentinel nears the viewport.
+// Infinite scroll over /api/feed (§6.2), or another endpoint that pages the
+// same way (`api` + `params`, e.g. /api/search). The first page is rendered
+// on the server (or fetched by the parent) and passed in; later pages load
+// as the sentinel nears the viewport.
 export function CookFeed({
   initial,
   author,
   following = false,
+  api = "/api/feed",
+  params,
   empty,
 }: {
   initial: FeedPage;
   author?: string;
   following?: boolean;
+  api?: string;
+  params?: Record<string, string>;
   empty: React.ReactNode;
 }) {
   const [items, setItems] = useState<CookView[]>(initial.items);
@@ -31,8 +37,9 @@ export function CookFeed({
         cursor,
         ...(author ? { author } : {}),
         ...(following ? { feed: "following" } : {}),
+        ...params,
       });
-      const res = await fetch(`/api/feed?${qs}`);
+      const res = await fetch(`${api}?${qs}`);
       if (!res.ok) throw new Error(String(res.status));
       const page: FeedPage = await res.json();
       // A cook indexed between page loads can shift items; skip repeats.
@@ -45,7 +52,7 @@ export function CookFeed({
     } catch {
       setState("error");
     }
-  }, [author, following, cursor, state]);
+  }, [api, params, author, following, cursor, state]);
 
   useEffect(() => {
     const el = sentinel.current;

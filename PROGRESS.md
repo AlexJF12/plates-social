@@ -1,6 +1,66 @@
 # Progress
 
-## Current phase: 6.5 — UI and UX review ✅ approved by the human on the iPhone, PR open (2026-09-30)
+## Current phase: 6.6 — Handle typeahead, best cook, search ⏳ built, awaiting the human's iPhone review (2026-09-30)
+
+Branch: `feature/phase-6.6` (from main after PR #8/#9). Spec: SPEC §8 Phase 6.6; §2.1, §2.2 and §7 updated to match what was built.
+
+### Built
+
+- **Migration `004_search`** (additive, indexes only plus a helper function): extensions `pg_trgm` and `unaccent`; `immutable_unaccent(text)` (IMMUTABLE wrapper that pins the dictionary, the standard workaround, since `unaccent()` is only STABLE and can't be indexed); GIN trigram indexes `cook_dish_trgm_idx` on `immutable_unaccent("dishName")` and `account_name_trgm_idx` on `immutable_unaccent(displayName || ' ' || handle)`; btree `cook_local_date_idx` on `cookedLocalDate` (best cook scans one month across authors).
+- **Best cook** (`lib/cook/best.ts` pure month logic; `getBestCooks`, `getBestOfMonth`, `getAuthorBadges`, `getEarliestCookMonth` in `lib/db/queries.ts`). One SQL query: `DISTINCT ON (month, mealType)` over cooks joined to kudos, `count(distinct kudos author)` excluding the cook's author, both accounts `visibleAccount`, six known meal types only, ordered by score desc, `cookedAtUtc`, `uri`. The inner join makes ≥ 1 kudos the threshold.
+  - `/best` resolves the viewer's month in the browser (`BestRedirect`); the tab bar links straight to `/best/YYYY-MM` once hydrated. `/best/[month]` 404s for a malformed month or one that hasn't started anywhere (UTC+14). `BestHeader`: Previous stops at the earliest month with a visible cook, Next at the viewer's current month. `BestStatus` says "Leading so far…" for a running month. `BestList` rows, `BestSkeleton`.
+  - **Badges** only for completed months (ended at UTC−12, `isCompletedMonth`). `CookView.badge` is filled by `withBadges`, one `getBestCooks` query per feed page / detail (never per card). `BestBadge` on feed cards and the detail page; "Best cooks" chips on profiles (hidden when none).
+- **Search**: `GET /api/search?q=&meal=&cursor=` (signed in only; 400 under 2 chars; unknown `meal` ignored = All). `searchCooks` reuses `cookQuery` + the shared `cookPage` (same cursor as feeds; `getCookFeed` now uses it too). `searchPeople`: ≤ 5 visible accounts, prefix matches first. LIKE patterns escape `\`, `%`, `_` (`containsPattern`). Query rules in `lib/search.ts` (trim, collapse spaces, 2–100 chars). `/search` page renders the URL's first page on the server; `SearchView` updates the URL with `history.replaceState` (no RSC round trip), debounces 250ms, aborts stale fetches, and pages with `CookFeed` (which now takes `api` + `params`).
+- **Sign-in typeahead** (`LoginForm`): `searchActorsTypeahead` on `public.api.bsky.app`, limit 6, from the browser; ≥ 2 chars, leading `@` stripped, 200ms debounce, abort + sequence check. ARIA combobox (`aria-expanded`, `aria-controls`, `aria-activedescendant`; ↑/↓, Enter, Escape). Opens above the field. Tapping a row fills the handle and calls the same sign-in as the button. Avatars come straight from Bluesky's CDN (letter fallback if missing or broken). Any failure = no list; the field and button behave as before.
+- **Tab bar**: Feed · Search · Log · Best · Profile (`Rows3`, `Search`, `Plus` pill, `Trophy`, `User`), 74px per tab at 375px.
+- `useViewerToday` (`components/useViewerToday.ts`) extracted from `ProfileStats`, shared by stats, tab bar and Best header.
+
+### Decisions not in the spec
+
+- **Accent-insensitive matching was cheap, so it's in** ("creme" finds "Crème brûlée", both for dishes and people), via `immutable_unaccent`. Neon supports `unaccent`. This adds one SQL function to the schema (besides indexes).
+- `/api/search` requires sign-in (every screen that uses it does; stops anonymous scraping of the search). `/api/feed` stays as it was.
+- Ties "earliest `cookedAt`" compares instants (`cookedAtUtc`), not wall-clock strings.
+- The unique `(authorDid, subjectUri)` constraint on `kudos` already makes duplicate kudos impossible in the index; the query still counts distinct authors, and a test shows the duplicate is rejected.
+- People search matches any visible account in the index (not only those with cooks).
+- Search back-navigation: Next re-renders `/search` from its cached payload with the props of the URL it was first loaded with, so `SearchView` initialises from `window.location` (otherwise Back showed an empty search and rewrote the URL; found and fixed with Playwright).
+- The five-tab e2e test mints a session cookie at runtime for a made-up test DID (`did:plc:e2etabbar…`, no account anywhere, nothing is written) from the local `SESSION_SECRET`. Nothing secret is committed. Flagging it since it's the first committed signed-in e2e test.
+- Trophy badge is ink, not accent (accent stays for interactive things and active kudos).
+- 2-character searches can't use the trigram index (trigrams need 3); they fall back to walking `cook_sort_idx` with a filter, fine at this scale.
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 133/133 (new: `lib/db/best.test.ts` 10, `lib/db/search.test.ts` 8, `lib/cook/best.test.ts` 4). `pnpm test:e2e`: 17/17 (new `e2e/phase66.spec.ts`: typeahead suggestions/above-field/≥44px rows/one-tap sign-in, keyboard + `@` + Escape, failing typeahead still signs in, stale response ignored, five tabs at 375px).
+- Winner tests cover: threshold, ties (instant then uri), month boundary by `cookedLocalDate` either side of midnight UTC (NY and Tokyo), Other excluded, self-kudos, duplicate kudos, inactive and denylisted kudos authors and cook authors, author filter, completed vs current month for feed/detail badges and profile wins, Best tab order.
+- Search tests: substring, case, accents both ways, `%`/`_`/`\` literal, meal filter, paging (45 rows, ties) and denylist/inactive, people prefix order.
+- `curl` on `/api/search` before the UI: 401 signed out, 400 for 1 char, `bl` → Bleeg + BLT, `BLE` → Bleeg, `meal=lunch` → BLT and no people, `alex` → the human's account, `%%` → nothing, `meal=bake` ignored.
+- **Live typeahead against the real Bluesky API** (Playwright, not stubbed): typing "alexjf" → one request `q=alexjf&limit=6`, 6 real suggestions with the human's account first; ArrowDown sets `aria-activedescendant`; Escape hides the list.
+- EXPLAIN: on the fixture data (10 cooks) Postgres seq-scans everything, as expected. With 50k synthetic cooks / 2k accounts in a rolled-back transaction: a common term ("risot") walks `cook_sort_idx` and stops at 21 rows (0.3ms); a rare term uses `cook_dish_trgm_idx` (1.3ms); people use `account_name_trgm_idx` (0.6ms); best-of-month uses `cook_local_date_idx` + `kudos_subject_idx` (5ms). Full plans: `explain-big.txt` in this session's scratchpad.
+- Playwright screenshots at 375px, light + dark, signed in with a minted cookie for the human's DID: search (hint, results, people, meal filter, no match), Best (current month, August, empty June with Previous disabled), global feed and cook detail with badges, Maya's profile with "Best cooks", own profile, sign-in with live suggestions. No console errors, no horizontal scroll. Search → open a cook → Back keeps the query, filter and results.
+- **Not verified:** real iPhone (typeahead with the iOS keyboard open, Best tab, badges, search in the installed PWA) — the human's step below. Nothing in this phase writes to a PDS, so no `getRecord`/Tap checks apply.
+
+### Local-only fixture rows (still in the DB for the human's review)
+
+Every DID starts `did:plc:fixture`, every rkey contains `3mwpfix`: Maya Okafor, Theo Park, Rosa Quintero; 8 cooks (Jul–Sep 2026) reusing the human's cached image CIDs; 13 kudos, two of them on BLT and Bleeg. Plus (added at the human's request) 12 more accounts (Priya, Sam, Lena, Kofi, Hana, Diego, Nora, Omar, June, Felix, Amara, Ben; `*.fixture.test`) with 3 cooks each (one each in Jul, Aug, Sep) and 90 kudos among them. Their photos and avatars are emoji-on-a-plate images rendered with Chromium and written straight into the proxy's disk cache (`.cache/img/<cid>-{thumb,full,avatar}.webp`, CIDs computed from the JPEG bytes); nothing was uploaded to any PDS. Those cache files are harmless but can be removed with `rm -rf .cache/img` (real images re-fetch on demand). Without them the Best tab and badges have nothing to show (the real index has no kudos). Remove after the review:
+```sql
+DELETE FROM kudos WHERE uri LIKE '%3mwpfix%' OR "authorDid" LIKE 'did:plc:fixture%' OR "subjectUri" LIKE '%did:plc:fixture%';
+DELETE FROM cook WHERE "authorDid" LIKE 'did:plc:fixture%';
+DELETE FROM account WHERE did LIKE 'did:plc:fixture%';
+```
+(`docker exec -i plates-social-postgres-1 psql -U cooklog -d cooklog`); the index should then be back to 2 cooks, 1 account, no kudos.
+
+### Known issues
+
+- Accounts Bluesky's AppView doesn't know (some self-hosted PDSes) aren't suggested; typing the full handle still works (by design).
+- Badges appear 12h after a month ends in UTC (when it has ended at UTC−12).
+- Carried: dev "N" indicator over the Feed tab; orange placeholder icon (Phase 7).
+
+### Next step
+
+Human, on the iPhone (tunnel URL, installed app): sign out, type in the handle field with the keyboard open (list should sit above the field, fully visible) and tap a suggestion; the Best tab (Sep "Leading so far", ‹ to Aug/Jul, badges on Maya's carbonara and focaccia, Maya's profile "Best cooks"); Search (type "carb", "creme", "ma", the meal chips, open a cook and go Back). Then approve, remove the fixture rows (above), and merge the PR. Phase 7 is blocked until the human provides a domain.
+
+---
+
+## Phase 6.5 — UI and UX review ✅ approved by the human on the iPhone (merged, PR #8)
 
 Branch: `feature/phase-6.5-ui` (from main after PR #7). Spec: SPEC §8 Phase 6.5; §7 rewritten to describe what was built.
 

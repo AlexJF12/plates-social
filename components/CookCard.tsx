@@ -4,6 +4,7 @@ import { mealTypeLabel } from "@/lib/cook/mealTypes";
 import type { CookView } from "@/lib/db/queries";
 import { cookPath, displayName, profilePath } from "@/lib/links";
 import { Avatar } from "./Avatar";
+import { BestBadge } from "./BestBadge";
 import { PhotoCarousel } from "./PhotoCarousel";
 import { TimeAgo } from "./TimeAgo";
 
@@ -31,6 +32,7 @@ export function CookCard({ cook }: { cook: CookView }) {
       </header>
       <PhotoCarousel did={cook.author.did} images={cook.images} />
       <Link href={href} className="block px-4 pt-4 pb-3 active:opacity-80">
+        {cook.badge && <BestBadge badge={cook.badge} className="mb-1.5" />}
         <h2 className="font-display text-dish text-balance break-words">{cook.dishName}</h2>
         {cook.note && <p className="mt-2 line-clamp-3 text-body break-words whitespace-pre-line">{cook.note}</p>}
         <CookCounts kudos={cook.kudosCount} comments={cook.commentCount} />

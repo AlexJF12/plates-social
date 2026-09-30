@@ -1,6 +1,8 @@
 import { isValidDid, isValidHandle } from "@atproto/syntax";
 import { type Kysely, sql } from "kysely";
 import { COLLECTIONS } from "../config";
+import { type Badge, isCompletedMonth, type Month, monthRange } from "../cook/best";
+import { MEAL_TYPES } from "../cook/mealTypes";
 import type { DayCount } from "../cook/stats";
 import { denylist } from "../denylist";
 import { getDb } from ".";
@@ -39,6 +41,8 @@ export type CookView = {
   sortAt: string;
   kudosCount: number;
   commentCount: number;
+  // Best cook of a completed month (Phase 6.6), or null.
+  badge: Badge | null;
 };
 
 export type FeedPage = { items: CookView[]; cursor: string | null };
@@ -103,7 +107,26 @@ const toView = (r: CookRow): CookView => ({
   sortAt: r.sortAt.toISOString(),
   kudosCount: r.kudosCount ?? 0,
   commentCount: r.commentCount ?? 0,
+  badge: null,
 });
+
+// Newest first, PAGE_SIZE at a time, by the (sortAt, uri) cursor, with
+// badges looked up for the whole page in one query.
+async function cookPage(db: Db, q: ReturnType<typeof cookQuery>, cursor?: string | null): Promise<FeedPage> {
+  q = q.orderBy("cook.sortAt", "desc").orderBy("cook.uri", "desc").limit(PAGE_SIZE + 1);
+  const after = cursor ? decodeCursor(cursor) : null;
+  if (after) {
+    q = q.where((eb) =>
+      eb(eb.refTuple("cook.sortAt", "cook.uri"), "<", eb.tuple(after.sortAt, after.uri)),
+    );
+  }
+  const rows = await q.execute();
+  const items = await withBadges(db, rows.slice(0, PAGE_SIZE).map(toView));
+  return {
+    items,
+    cursor: rows.length > PAGE_SIZE ? encodeCursor(items[items.length - 1]) : null,
+  };
+}
 
 // Newest first. With authorDid: one person's cooks (profile). With
 // followedBy: cooks from the people that DID follows in this app, plus its
@@ -114,10 +137,8 @@ export async function getCookFeed(opts: {
   cursor?: string | null;
   db?: Db;
 }): Promise<FeedPage> {
-  let q = cookQuery(opts.db ?? getDb())
-    .orderBy("cook.sortAt", "desc")
-    .orderBy("cook.uri", "desc")
-    .limit(PAGE_SIZE + 1);
+  const db = opts.db ?? getDb();
+  let q = cookQuery(db);
   if (opts.authorDid) q = q.where("cook.authorDid", "=", opts.authorDid);
   const me = opts.followedBy;
   if (me) {
@@ -132,18 +153,7 @@ export async function getCookFeed(opts: {
       ]),
     );
   }
-  const after = opts.cursor ? decodeCursor(opts.cursor) : null;
-  if (after) {
-    q = q.where((eb) =>
-      eb(eb.refTuple("cook.sortAt", "cook.uri"), "<", eb.tuple(after.sortAt, after.uri)),
-    );
-  }
-  const rows = await q.execute();
-  const items = rows.slice(0, PAGE_SIZE).map(toView);
-  return {
-    items,
-    cursor: rows.length > PAGE_SIZE ? encodeCursor(items[items.length - 1]) : null,
-  };
+  return cookPage(db, q, opts.cursor);
 }
 
 // A profile by DID or handle, or null if unknown or hidden.
@@ -244,7 +254,8 @@ export async function getCookDetail(did: string, rkey: string, db: Db = getDb())
     getComments({ cookUri: uri, db }),
   ]);
 
-  return { cook: toView(row), kudos: kudos satisfies Author[], comments };
+  const [cook] = await withBadges(db, [toView(row)]);
+  return { cook, kudos: kudos satisfies Author[], comments };
 }
 
 // The viewer's kudos record for a cook, if any.
@@ -319,5 +330,139 @@ export async function getCookDayCounts(
     .select(["cook.cookedLocalDate as date", sql<number>`count(*)::int`.as("count")])
     .groupBy("cook.cookedLocalDate")
     .orderBy("cook.cookedLocalDate")
+    .execute();
+}
+
+// ---- Best cook (Phase 6.6) ----
+
+export type BestCook = { uri: string; authorDid: string; mealType: string; month: Month; score: number };
+
+// The winner per (month, meal type) for the given months, computed from
+// the index on every read. Score = distinct kudos authors, not counting
+// the cook's own author or hidden accounts; only visible cooks compete,
+// only the six known meal types, and a winner needs at least 1 kudos (the
+// inner join). Ties: earliest cookedAt, then lowest uri. With authorDid,
+// only that author's wins (they still competed against everyone).
+export async function getBestCooks(opts: { months: Month[]; authorDid?: string; db?: Db }): Promise<BestCook[]> {
+  const months = [...new Set(opts.months)].sort();
+  if (months.length === 0) return [];
+  const db = opts.db ?? getDb();
+  const from = monthRange(months[0]).from;
+  const to = monthRange(months[months.length - 1]).to;
+  const { rows } = await sql<BestCook>`
+    select * from (
+      select distinct on (month, c."mealType")
+        c.uri, c."authorDid", c."mealType",
+        to_char(c."cookedLocalDate", 'YYYY-MM') as month,
+        count(distinct k."authorDid")::int as score
+      from cook c
+      join account a on a.did = c."authorDid"
+      join kudos k on k."subjectUri" = c.uri and k."authorDid" <> c."authorDid"
+      join account ka on ka.did = k."authorDid"
+      where ${visibleAccount("a")} and ${visibleAccount("ka")}
+        and c."cookedLocalDate" >= ${from}::date and c."cookedLocalDate" < ${to}::date
+        and to_char(c."cookedLocalDate", 'YYYY-MM') = any(${months}::text[])
+        and c."mealType" = any(${MEAL_TYPES.map((m) => m.value)}::text[])
+      group by c.uri
+      order by month, c."mealType", score desc, c."cookedAtUtc" asc, c.uri asc
+    ) w
+    where ${opts.authorDid ? sql`w."authorDid" = ${opts.authorDid}` : sql`true`}
+    order by month desc, w."mealType"
+  `.execute(db);
+  return rows;
+}
+
+// Sets `badge` on cooks that won a completed month. One query per page.
+async function withBadges(db: Db, cooks: CookView[], now = new Date()): Promise<CookView[]> {
+  const months = cooks.map((c) => c.cookedAt.slice(0, 7)).filter((m) => isCompletedMonth(m, now));
+  if (months.length === 0) return cooks;
+  const wins = new Map((await getBestCooks({ months, db })).map((w) => [w.uri, w]));
+  return cooks.map((c) => {
+    const w = wins.get(c.uri);
+    return w ? { ...c, badge: { mealType: w.mealType, month: w.month } } : c;
+  });
+}
+
+// A profile's wins in completed months, newest first.
+export async function getAuthorBadges(did: string, db: Db = getDb(), now = new Date()): Promise<(Badge & { uri: string })[]> {
+  const rows = await db
+    .selectFrom("cook")
+    .where("authorDid", "=", did)
+    .where((eb) => eb.exists(eb.selectFrom("kudos").select(sql`1`.as("one")).whereRef("kudos.subjectUri", "=", "cook.uri")))
+    .select(sql<string>`to_char("cookedLocalDate", 'YYYY-MM')`.as("month"))
+    .distinct()
+    .execute();
+  const months = rows.map((r) => r.month).filter((m) => isCompletedMonth(m, now));
+  const wins = await getBestCooks({ months, authorDid: did, db });
+  const order = (t: string) => MEAL_TYPES.findIndex((m) => m.value === t);
+  return wins
+    .sort((a, b) => b.month.localeCompare(a.month) || order(a.mealType) - order(b.mealType))
+    .map(({ uri, mealType, month }) => ({ uri, mealType, month }));
+}
+
+export type BestOfMonth = { mealType: string; cook: CookView | null; score: number }[];
+
+// The Best tab: one entry per known meal type, in the log form's order.
+export async function getBestOfMonth(month: Month, db: Db = getDb()): Promise<BestOfMonth> {
+  const wins = await getBestCooks({ months: [month], db });
+  const cooks = wins.length
+    ? (await cookQuery(db).where("cook.uri", "in", wins.map((w) => w.uri)).execute()).map(toView)
+    : [];
+  return MEAL_TYPES.map(({ value }) => {
+    const w = wins.find((x) => x.mealType === value);
+    return { mealType: value, cook: cooks.find((c) => c.uri === w?.uri) ?? null, score: w?.score ?? 0 };
+  });
+}
+
+// The earliest month with any visible cook (the Best tab's Previous stops
+// there), or null if there are none.
+export async function getEarliestCookMonth(db: Db = getDb()): Promise<Month | null> {
+  const row = await db
+    .selectFrom("cook")
+    .innerJoin("account", "account.did", "cook.authorDid")
+    .where(visibleAccount("account"))
+    .select(sql<string | null>`to_char(min("cookedLocalDate"), 'YYYY-MM')`.as("month"))
+    .executeTakeFirst();
+  return row?.month ?? null;
+}
+
+// ---- Search (Phase 6.6) ----
+
+// A LIKE pattern matching `q` anywhere, with its own %, _ and \ literal.
+export const containsPattern = (q: string) => `%${q.replace(/[\\%_]/g, "\\$&")}%`;
+
+// Dish names containing q, case- and accent-insensitive (the trigram index
+// on immutable_unaccent("dishName")), newest first, paged like the feeds.
+// `q` must already be normalized (lib/search.ts).
+export async function searchCooks(opts: {
+  q: string;
+  mealType?: string | null;
+  cursor?: string | null;
+  db?: Db;
+}): Promise<FeedPage> {
+  const db = opts.db ?? getDb();
+  let q = cookQuery(db).where(
+    sql<boolean>`immutable_unaccent(cook."dishName") ilike immutable_unaccent(${containsPattern(opts.q)})`,
+  );
+  if (opts.mealType) q = q.where("cook.mealType", "=", opts.mealType);
+  return cookPage(db, q, opts.cursor);
+}
+
+// Visible accounts whose display name or handle contains q, at most 5;
+// names that start with q first.
+export async function searchPeople(q: string, db: Db = getDb()): Promise<Author[]> {
+  const name = sql<string>`immutable_unaccent(coalesce("displayName", '') || ' ' || coalesce(handle, ''))`;
+  const prefix = q.replace(/[\\%_]/g, "\\$&") + "%";
+  return db
+    .selectFrom("account")
+    .select(["did", "handle", "displayName", "avatarCid"])
+    .where(visibleAccount("account"))
+    .where(sql<boolean>`${name} ilike immutable_unaccent(${containsPattern(q)})`)
+    .orderBy(
+      sql`(immutable_unaccent(coalesce("displayName", '')) ilike immutable_unaccent(${prefix}) or handle ilike ${prefix})`,
+      "desc",
+    )
+    .orderBy(sql`lower(coalesce("displayName", handle, did))`)
+    .limit(5)
     .execute();
 }
