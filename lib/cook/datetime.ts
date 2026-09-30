@@ -37,3 +37,20 @@ export function datetimeLocalInputToCookedAt(value: string): string | null {
 export function localDateOf(cookedAt: string): string {
   return cookedAt.slice(0, 10);
 }
+
+// "Mon, Sep 28, 12:34 PM": the wall-clock time the author recorded, in the
+// author's own offset (not converted to the viewer's zone).
+export function formatCookedAt(cookedAt: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(cookedAt);
+  if (!m) return cookedAt;
+  const [, y, mo, d, h, mi] = m.map(Number);
+  // Treat the local parts as UTC and format in UTC, so no zone shifts them.
+  return new Date(Date.UTC(y, mo - 1, d, h, mi)).toLocaleString("en-US", {
+    timeZone: "UTC",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}

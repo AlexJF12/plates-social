@@ -50,7 +50,14 @@ source .env.local
 curl -u admin:$TAP_ADMIN_PASSWORD http://127.0.0.1:2480/info/<your-did>
 ```
 
-Until Phase 3 adds `/api/webhook`, Tap's deliveries get a 404 and it keeps retrying. That's expected.
+Tap delivers every event to `POST /api/webhook` (Basic auth with the same password). A 200 is the ack; anything else makes Tap retry. Rejected records (bad Lexicon, broken rule) still get a 200 and a `webhook: dropped …` log line, so they aren't retried forever. The dev server must be running for events to arrive; Tap buffers them until it is.
+
+Other useful Tap endpoints (all need `-u admin:$TAP_ADMIN_PASSWORD`; POSTs also need `-H 'Content-Type: application/json'`, or Tap silently reads an empty DID list):
+
+```sh
+curl -u admin:$TAP_ADMIN_PASSWORD http://127.0.0.1:2480/stats/outbox-buffer   # events waiting for the webhook
+curl -u admin:$TAP_ADMIN_PASSWORD http://127.0.0.1:2480/stats/repo-count
+```
 
 ## Testing on a phone (tunnel)
 
@@ -78,12 +85,16 @@ pnpm lex:build    # writes lib/lexicons-gen/ (generated; never edit by hand)
 
 App code imports Lexicons only through `lib/lexicons.ts`.
 
+## Images
+
+`/api/img/<did>/<cid>?size=avatar|thumb|full` serves photos and avatars: it only serves CIDs referenced by an indexed cook or profile from an active account, fetches the blob from the author's PDS (https only), checks the bytes against the CID, resizes to WebP with sharp and caches it on disk in `.cache/img/` (override with `IMAGE_CACHE_DIR`). Delete that folder any time; it refills on demand.
+
 ## Tests
 
 ```sh
 pnpm typecheck
 pnpm lint
-pnpm test         # Vitest unit tests
+pnpm test         # Vitest; the indexer/query tests need Postgres up (they run in rolled-back transactions)
 pnpm test:e2e     # Playwright at 375px; needs pnpm dev running. Screenshots in test-results/
 ```
 
@@ -93,3 +104,26 @@ pnpm test:e2e     # Playwright at 375px; needs pnpm dev running. Screenshots in 
 pnpm db:down && docker volume rm plates-social_pgdata && pnpm db:up && pnpm migrate
 rm -rf .tap-data
 ```
+
+## Rebuilding the index
+
+Everything in Postgres except `auth_state`/`auth_session` is a copy of records on users' PDSes, so the index can always be rebuilt from Tap. Use this if index data is ever corrupted.
+
+```sh
+# 1. The app (pnpm dev, or the production app) and Tap must both be running:
+#    the rebuild arrives through the normal webhook.
+# 2. Dry run: shows the database, row counts and the repos it will re-sync.
+pnpm rebuild-index
+# 3. Do it. Wipes account/cook/kudos/comment/follow, then removes and re-adds
+#    every repo in Tap, which makes Tap backfill each one from its PDS.
+#    Waits until Tap's outbox is empty and prints row counts before/after.
+pnpm rebuild-index --yes
+```
+
+- The repos to re-sync are collected from the index tables and `auth_session` before the wipe (Tap has no "list repos" endpoint). If you know of accounts missing from the index, pass their DIDs as extra arguments.
+- Feeds are empty until the backfill lands (seconds locally; longer with many repos).
+- `indexedAt` is reset to the rebuild time. `sortAt` is unchanged for normal records (it's `min(createdAt, indexedAt)`); only future-dated records get re-stamped.
+- If Tap's own state is lost or suspect too: stop Tap, `rm -rf .tap-data`, start it again (it re-discovers every account with a cook via the signal collection), then run `pnpm rebuild-index --yes` so signed-in users without cooks are re-added.
+- **Production:** never run this without the human approving the exact command, and take a Neon branch/restore point first (§0.13).
+
+Verified 2026-09-29 locally: a dump of every index column except `indexedAt`/`updatedAt` was byte-identical before and after.

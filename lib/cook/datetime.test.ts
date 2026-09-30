@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   datetimeLocalInputToCookedAt,
+  formatCookedAt,
   localDateOf,
   toDatetimeLocalInput,
   toLocalDatetimeWithOffset,
@@ -79,5 +80,17 @@ describe("datetimeLocalInputToCookedAt", () => {
 describe("localDateOf", () => {
   it("uses the date part of a Z datetime", () => {
     expect(localDateOf("2026-09-29T23:30:00.000Z")).toBe("2026-09-29");
+  });
+});
+
+describe("formatCookedAt", () => {
+  it("shows the author's wall-clock time, whatever the server's zone", () => {
+    // 21:00 in New York is 01:00 UTC the next day; still shows Tue 9 PM.
+    expect(formatCookedAt("2026-09-29T21:00:00-04:00")).toBe("Tue, Sep 29, 9:00 PM");
+    expect(formatCookedAt("2026-09-30T06:30:00+05:30")).toBe("Wed, Sep 30, 6:30 AM");
+  });
+
+  it("falls back to the raw string if it can't parse it", () => {
+    expect(formatCookedAt("whenever")).toBe("whenever");
   });
 });

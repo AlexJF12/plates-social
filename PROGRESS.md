@@ -1,6 +1,71 @@
 # Progress
 
-## Current phase: 2 — Log a cook ⏸ checkpoint, awaiting review (2026-09-29)
+## Current phase: 3 — Sync, global feed, profiles, images ⏸ checkpoint, verified, awaiting review (2026-09-29)
+
+Branch: `feature/phase-3`
+
+### Built
+
+- `POST /api/webhook` (Statusphere pattern): `assureAdminAuth`, `parseTapEvent(jsonToLex(body))`, then `indexEvent`. 200 = ack. Records that fail validation get 200 + a `webhook: dropped …` log (otherwise Tap retries forever); DB errors get 500 so Tap redelivers.
+- `lib/indexer/index.ts` `indexEvent(db, evt)`: one dispatcher for all events.
+  - cook/kudos/comment/follow: `$parse` against our Lexicons, rkey must be a TID, kudos/comment subject must be an `NS.cook` URI. create/update = idempotent upsert; delete by uri.
+  - `app.bsky.actor.profile` (rkey `self` only, validated with the installed Bluesky Lexicon): displayName + avatarCid on `account`; delete clears them.
+  - identity: handle (Tap-verified; `handle.invalid` → null) + active. `deleted` → purge every row the DID authored (not others' rows about it). takendown/suspended/deactivated → `active=false`, rows kept, hidden everywhere.
+- `lib/indexer/{kudos,follow,comment,account}.ts`: row builders + upserts, all single idempotent statements. Kudos/follow: one per (author, subject), earliest `createdAt` wins regardless of arrival order. Comment `sortAt = min(createdAt, indexedAt)`, kept on update (same as cooks).
+- `lexicons/app/bsky/actor/profile.json` (+ `com.atproto.label.defs`) via `lex install`, re-exported as `bskyProfile` from `lib/lexicons.ts`.
+- Image proxy `GET /api/img/[did]/[cid]?size=avatar|thumb|full` (`lib/image/proxy.ts`): serves only CIDs referenced by an indexed cook or avatar of an **active** account (checked every request, so deleted cooks stop serving); PDS from the DID doc via Tap, https + non-IP hosts only; 5 MB cap, 15 s timeout; **bytes verified against the CID**; sharp sniffs the real format, resizes (avatar 128² cover, thumb ≤1080 wide, full ≤2000), WebP; disk cache `.cache/img/<cid>-<size>.webp` (atomic write, in-flight dedupe); `Cache-Control: public, max-age=31536000, immutable`; 404/502 are `no-store`.
+- Read queries `lib/db/queries.ts`: `getCookFeed` (global or per author; cursor `sortAt~uri`, 20/page, row comparison), `getAccount` (DID or handle), `getCookDetail` (kudos givers + first 50 comments). Kudos/comment counts exclude hidden authors.
+- `GET /api/feed?cursor=&author=` for infinite scroll.
+- UI (route group `app/(app)/` with a bottom tab bar: Following, Global, Log (primary), Profile):
+  - `/global`: feed cards per §7 (author row, relative time, edge-to-edge scroll-snap carousel with dots, 4:5 max crop from the first photo, dish, meal label, note clamped to 3 lines, counts). Infinite scroll with loading/error+retry.
+  - `/profile/[actor]` (handle or DID): avatar, name, handle, their cooks. Back button unless it's you.
+  - `/cook/[did]/[rkey]`: every photo at full aspect ratio, dish, meal type, "Cooked …" in the author's own wall-clock time (`formatCookedAt`), full note, kudos avatars, comments (read-only).
+  - `/following` placeholder slimmed down (MyCooks removed; your cooks are on your profile). After posting, the log form now goes to the new cook's page.
+- `/api/cook` (Phase 2) also calls `ensureAccount` so a read-your-own-writes cook shows before Tap's identity event.
+- `pnpm rebuild-index [--yes] [extra DIDs]` (`scripts/rebuild-index.mts`) + README "Rebuilding the index".
+- Tests: `lib/indexer/index.test.ts` (18, real Postgres in rolled-back transactions via `lib/db/testing.ts`), `lib/db/queries.test.ts` (4), `formatCookedAt` (2).
+
+### Decisions not in the spec
+
+- A third proxy size, `avatar` (128px), so feeds don't load 1000px avatars. Output is always WebP.
+- Proxy verifies blob bytes against the CID before caching forever; refuses non-https / IP-literal / localhost PDS endpoints (SSRF). DNS-rebinding to private IPs is **not** blocked yet (Phase 7 hardening item).
+- Kudos and comments whose subject isn't an `NS.cook` URI are dropped at index time (Lexicon only says strongRef).
+- Kudos/follow "keep earliest" = earliest `createdAt`. Known edge: if the kept one is deleted, the author's other duplicate isn't re-surfaced until a rebuild.
+- Content from a DID with no identity event yet is shown (`ensureAccount` inserts active=true, handle null → DID shown until Tap's identity event). In practice Tap sends identity events on backfill.
+- App pages require sign-in (cookie check only, `getDid`); `/api/feed` and `/api/img` are public (the data is public on the network).
+- Feed time is relative post time (`sortAt`); detail also shows the author-local "Cooked" time.
+- Detail comments: first 50, no paging yet (paging comes with posting comments in Phase 5).
+- Bottom tab bar added now (pages needed navigation); full design pass stays in Phase 6.
+- Rebuild = truncate index + Tap `/repos/remove` then `/repos/add` per DID (verified that this triggers a full re-backfill).
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 84/84. `pnpm test:e2e`: 8/8.
+- **Idempotency test** (`lib/indexer/index.test.ts`): each event type (identity, profile, cook, kudos, comment, follow, deletes) applied, then replayed with a later clock → snapshot of all test-DID rows identical; whole-stream replay identical; Tap delivery after read-your-own-writes identical. Mutation-checked: re-stamping sortAt on replay, or dropping the keep-earliest rule, makes tests fail.
+- **Tap end to end:** when the route came up, Tap drained its 7-event backlog (identity + profile + 5 cooks) with 200s: handle/displayName/avatar arrived; cooks were no-ops (indexedAt unchanged from Phase 2's upsert).
+- curl on `/api/webhook`: no auth / wrong password → 401; garbage → 200 dropped; invalid cook → 200 dropped (logged reason); valid → indexed; replay → row unchanged; delete → row gone. (Throwaway test DID, cleaned up.)
+- curl on `/api/img`: avatar/thumb/full → 200 WebP 128² / 1080×810 / 2000×1500, immutable; second hit 8 ms from cache; unreferenced CID, wrong DID → 404 no-store; bad size/`constructor`/cid/did → 400. CID check rejects mismatched bytes.
+- `/api/feed`: 5 cooks with counts; bad author → 400; garbage cursor ignored. Paging 45 cooks with sortAt ties → 20/20/5, no gaps or repeats (test).
+- **Index rebuild run locally:** `pnpm rebuild-index --yes` → rows 1/5/0/0/0 before and after, and a dump of every column except indexedAt/updatedAt was identical.
+- Playwright at 375px, light + dark, signed in via a minted cookie (human approved): `/global`, `/profile/<handle>`, `/profile/<did>`, `/cook/…`, `/following`, `/log` → 200, no console/hydration errors, no horizontal scroll, every image decoded, correct tab active, carousel dots follow a swipe, unknown profile → 404. Screenshots reviewed.
+- **Delete propagation (human + me):** the human deleted the 3 "Phase 2 test: shakshuka" cooks on pdsls.dev. `getRecord` → RecordNotFound for all three; rows gone from Postgres (only the webhook deletes cooks); the proxy now 404s their photo CIDs while the kept cooks' photos still serve 200.
+- **Human, iPhone (installed app):** Global and Profile tabs work; carousel swipes only the photos (after the overflow fix below).
+- Not done: second-account test (the human has no second account).
+
+### Known issues
+
+- **Carousel on iPhone (human report):** swiping a photo panned the whole screen sideways and left it offset. Not reproducible in desktop WebKit/Chromium (document measured exactly viewport width). Fix applied: `overflow-x: clip` on html/body (`app/globals.css`); verified in WebKit + Chromium that a forced overflow can't pan the page, sticky header and carousel still work. **Human confirmed on iPhone: fixed** (only the carousel moves). Root cause on-device still unidentified.
+- Second-account test skipped: the human has no second account. Tap delivery is verified for the human's own account (backlog drain + full rebuild), and multi-account indexing is covered by tests.
+- Tap retried the 404ing webhook in a tight loop (~28k retries, 11 MB log) before the route existed. Watch for this in production if the app is down: Tap's retry has no visible backoff.
+- Carried: quick-tunnel URL changes; `auth_state` never pruned; Lexicon `mealType` minLength decision still open.
+
+### Next step
+
+Human reviews the Phase 3 checkpoint; then commit/PR. Then Phase 4: follows, following feed, Bluesky import, first-login flow.
+
+---
+
+## Phase 2 — Log a cook ✅ complete (merged, PR #3)
 
 Branch: `feature/phase-2-log-cook`
 
