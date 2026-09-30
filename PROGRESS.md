@@ -44,7 +44,7 @@ Branch: `feature/phase-4-follows`
 - Playwright at 375px, light + dark (throwaway specs, deleted): `/following` (feed + active tab), own profile (import link + sign out, no follow button), other profile (Follow), `/import` (2 pre-selected, Follow all → Follow 1 → Follow 0 disabled, back button), `/import?first=1` (no back, Skip → /global), empty following feed (cookie for a DID with nothing). No horizontal scroll, no console errors, no failed images. Screenshots reviewed. UI round trip: Following→Follow on both profiles, Follow all → lands on `/following` with their cooks, unfollow again.
 - Image proxy after the `lib/pds.ts` move: forced cache miss on the avatar → 200 WebP.
 - **Human, installed app (2026-09-29):** signed out and in. Dev log: callback 307 → `/import?first=1` → candidate list empty → `/global`; `login` row created. Then Profile → "Find people from Bluesky" → `/import` → Global.
-- **Not verified yet:** a second sign-in skipping the import (goes to `/following`).
+- **Human, second sign-in:** callback 307 → `/` → `/following`, no import screen; `login.firstAt` unchanged.
 
 ### Known issues
 
@@ -54,7 +54,7 @@ Branch: `feature/phase-4-follows`
 
 ### Next step
 
-PR #5 open. Remaining manual check: sign out and in again → should land on Following (no import). Then merge. Then Phase 5: kudos, comments, delete, orphan hiding.
+PR #5 open, all checks done. Merge, then Phase 5: kudos, comments, delete, orphan hiding. Then Phase 5: kudos, comments, delete, orphan hiding.
 
 ---
 
