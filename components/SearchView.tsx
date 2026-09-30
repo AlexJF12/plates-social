@@ -30,10 +30,12 @@ function fromAddressBar() {
 // round trip) and fetches /api/search after a pause; stale requests are
 // aborted, so an older response never replaces a newer one.
 export function SearchView({
+  viewerDid,
   initialText,
   initialMeal,
   initial,
 }: {
+  viewerDid: string;
   initialText: string;
   initialMeal: string | null;
   initial: SearchResult | null;
@@ -162,6 +164,8 @@ export function SearchView({
             <CookFeed
               key={shown.key}
               initial={shown.result}
+              viewerDid={viewerDid}
+              refreshable={false}
               api="/api/search"
               params={params}
               empty={

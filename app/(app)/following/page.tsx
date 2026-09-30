@@ -11,7 +11,7 @@ import { getCookFeed } from "@/lib/db/queries";
 export default async function FollowingPage() {
   const did = await getDid();
   if (!did) redirect("/");
-  const initial = await getCookFeed({ followedBy: did });
+  const initial = await getCookFeed({ followedBy: did, viewer: did });
 
   return (
     <>
@@ -19,6 +19,7 @@ export default async function FollowingPage() {
       <main className="mx-auto w-full max-w-md">
         <CookFeed
           initial={initial}
+          viewerDid={did}
           following
           empty={
             <EmptyState
