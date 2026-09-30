@@ -22,7 +22,7 @@ Branch: `feature/phase-4-follows`
 
 ### Decisions not in the spec
 
-- **`login` table** (`003_login`) to know "first login" server-side, so the import shows once per account, not once per device (iOS home-screen apps have separate cookies). It isn't user content and isn't part of the rebuildable index (the rebuild script leaves it alone); losing it only means the import is offered once more. Your DID has no row yet, so **your next sign-in counts as a first login**.
+- **`login` table** (`003_login`) to know "first login" server-side, so the import shows once per account, not once per device (iOS home-screen apps have separate cookies). It isn't user content and isn't part of the rebuildable index (the rebuild script leaves it alone); losing it only means the import is offered once more. The human's first-login row now exists (2026-09-30 02:14 UTC).
 - Import list is fetched client-side (reading follows takes ~0.4 s for 256 follows; bigger accounts are slower), so there's a real loading/error state.
 - Bluesky follows are capped at 10,000 (100 pages). Past that, the rest are ignored.
 - The import POST only follows accounts that are candidates at that moment; arbitrary DIDs can't be bulk-followed through it.
@@ -43,7 +43,8 @@ Branch: `feature/phase-4-follows`
   - Cleanup: all follow records deleted (PDS `listRecords` empty, `follow` table empty); fixtures removed.
 - Playwright at 375px, light + dark (throwaway specs, deleted): `/following` (feed + active tab), own profile (import link + sign out, no follow button), other profile (Follow), `/import` (2 pre-selected, Follow all → Follow 1 → Follow 0 disabled, back button), `/import?first=1` (no back, Skip → /global), empty following feed (cookie for a DID with nothing). No horizontal scroll, no console errors, no failed images. Screenshots reviewed. UI round trip: Following→Follow on both profiles, Follow all → lands on `/following` with their cooks, unfollow again.
 - Image proxy after the `lib/pds.ts` move: forced cache miss on the avatar → 200 WebP.
-- **Not verified:** the first-login redirect through a real OAuth sign-in (needs the human; see next step). Phone testing of this phase.
+- **Human, installed app (2026-09-29):** signed out and in. Dev log: callback 307 → `/import?first=1` → candidate list empty → `/global`; `login` row created. Then Profile → "Find people from Bluesky" → `/import` → Global.
+- **Not verified yet:** a second sign-in skipping the import (goes to `/following`).
 
 ### Known issues
 
@@ -53,7 +54,7 @@ Branch: `feature/phase-4-follows`
 
 ### Next step
 
-Human reviews the Phase 4 checkpoint and does the manual steps (sign out, sign in from the installed app → lands on Global via the first-login import skip; Follow/Unfollow from a profile if a second cook author exists). Then commit/PR. Then Phase 5: kudos, comments, delete, orphan hiding.
+PR #5 open. Remaining manual check: sign out and in again → should land on Following (no import). Then merge. Then Phase 5: kudos, comments, delete, orphan hiding.
 
 ---
 
