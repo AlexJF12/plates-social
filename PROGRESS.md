@@ -1,6 +1,60 @@
 # Progress
 
-## Current phase: 1 — Lexicons and schema ⏸ checkpoint, awaiting Lexicon review (2026-09-29)
+## Current phase: 2 — Log a cook ⏸ checkpoint, awaiting review (2026-09-29)
+
+Branch: `feature/phase-2-log-cook`
+
+### Built
+
+- `lib/image/process.ts` (browser): decode via `<img>` (applies EXIF orientation), canvas at ≤2000px long edge, JPEG q0.85→0.65 then shrink ×0.75 until < 1,000,000 bytes. The canvas re-encode drops the camera's EXIF, including GPS. No imports, so the e2e test can inject it into a blank page.
+- `lib/image/stripJpeg.ts` (server): lossless JPEG metadata removal by walking the marker segments. Drops APP1 (EXIF/XMP), APP13 (IPTC), other APPn and COM; keeps APP0 (JFIF), APP2 (ICC, e.g. Display P3) and APP14 (Adobe).
+- `lib/image/verify.ts` (server, sharp): real format must be JPEG/WebP and ≤1,000,000 bytes. JPEGs are stripped, then must show no EXIF/XMP/IPTC; WebP carrying metadata is rejected (our client only sends JPEG). Returns the cleaned bytes and measured width/height.
+- `POST /api/blob`: raw image body → verify/strip → `uploadBlob` → `{ blob (JSON, $link), width, height }`. One photo per request.
+- `POST /api/cook`: mealType must be one of the 7 known values. Builds the record server-side (trims, sets `createdAt`), runs `cook.$parse` before touching the PDS, then `create` with a **client-generated TID rkey**. If create throws, it does a `get` at that rkey; if the record exists, an earlier attempt landed (lost response) and it's returned instead of duplicated. Then the read-your-own-writes upsert (a failure there is logged, not surfaced: the post is on the PDS and Tap will index it).
+- `lib/indexer/cook.ts`: `cookRow` (record → row: images jsonb, `cookedLocalDate` = date part of `cookedAt`, `sortAt = min(createdAt, indexedAt)`) and `upsertCook` (no-op for the same cid; a new cid updates content but keeps `indexedAt`/`sortAt`). **The Phase 3 webhook should reuse both.**
+- `lib/cook/datetime.ts`: `cookedAt` with the offset *of the cooked date* (DST-correct), plus datetime-local helpers. `lib/cook/mealTypes.ts`: labels, unknown → "Other".
+- `/log` page + `components/LogCookForm.tsx`: photo picker first (`accept="image/*" multiple`, max 4, previews, remove), dish, meal chips, note, cooked-at (defaults to the phone's "now", set on mount so it's never the server's zone). XHR upload with progress in the button. On failure the form stays filled and the button becomes Retry, reusing uploaded blobs (<10 min old) and the same rkey.
+- `/following` placeholder: "Log a cook" button + `components/MyCooks.tsx` (last 20 own cooks from the index; thumbnail straight from the PDS `getBlob` until the Phase 3 proxy; "View record" → pdsls.dev).
+- Tests: `lib/cook/datetime.test.ts`, `lib/indexer/cook.test.ts`, `lib/image/verify.test.ts` (including the exact EXIF block iOS Safari wrote on a real upload, GPS, XMP, ICC kept, pixels unchanged), `e2e/image-pipeline.spec.ts` (4032×3024 JPEG with Orientation 6 + GPS → 1500×2000 upright, no EXIF; incompressible noise → < 1 MB, aspect kept).
+
+### Decisions not in the spec
+
+- Upload goes browser → our server → PDS (the OAuth session and DPoP key live server-side, as in Statusphere). One request per photo keeps each one short for a PWA that may be suspended.
+- A client-generated TID rkey is the idempotency key for retries.
+- **The server strips JPEG metadata itself.** First version rejected any EXIF, but iOS Safari's canvas encoder adds its own 60-byte EXIF block (ColorSpace, PixelX/YDimension only; decoded from a real upload), so every iPhone upload failed. Now it strips losslessly and re-checks.
+- aspectRatio comes from sharp's measurement of the uploaded bytes.
+- JPEG only from the client (Safari's canvas WebP support is unreliable); WebP is still accepted by the server and Lexicon.
+- `/api/cook` only writes the 7 known mealTypes. **Lexicon gap to review:** `mealType` has no `minLength`, so `""` is a valid record. Other clients' `""` will display as "Other". Adding `minLength: 1` before the real namespace is published is cheap; after, it's permanent.
+- Form state is in memory only. If iOS kills the suspended app, the draft is lost (retry covers failed requests, not process death). IndexedDB drafts would be extra scope.
+- "My cooks" lives on the `/following` placeholder instead of a new route.
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 61/61. `pnpm test:e2e`: 8/8.
+- curl, signed out: `/log` → 307 to `/`; `/api/blob` and `/api/cook` → 401.
+- API script through the running server as the human (cookie minted for their DID with approval), 45/45: PNG/oversize rejected; GPS-tagged JPEG accepted and **stored without EXIF (getBlob)**; invalid rkey/dish/0 or 5 images/no offset/empty or unknown mealType → 400; create → 200; **retry with the same rkey → same uri+cid, one row**; `getRecord` checked field by field; Postgres row checked (cookedAtUtc, cookedLocalDate across UTC midnight, images jsonb, sortAt).
+- Playwright, `/log` at 375px light+dark, browser in `Asia/Kolkata`: previews upright, submit disabled until complete, default time = browser local time, no hydration errors, no horizontal scroll.
+- **Human, installed PWA on iPhone via tunnel:**
+  - "BLT": 1 photo, backdated `cookedAt` `2026-09-28T12:34:00-04:00`.
+  - "Bleeg": 3 photos (landscape 2000×1500, portrait 1500×2000, screenshot 923×2000).
+  - For both, `getRecord` fields are correct and every stored blob is JPEG with no EXIF/XMP/IPTC and no "GPS/Apple/iPhone" strings. The portrait photo was viewed and is upright. Postgres rows match.
+- Not verified: arrival through Tap (the webhook is Phase 3). HEIC can't be confirmed server-side: iOS hands the page a JPEG either way, and the posts decoded fine.
+
+### Known issues
+
+- One unexplained "Network error while uploading" on the human's first attempt (the request never reached the server; possibly the tunnel just after restart). Not reproduced since.
+- 3 test cooks ("Phase 2 test: shakshuka", rkeys `3mwovhkvtw723`, `3mwovhkvtw223`, `3mwovihdbi22x`) are still on the human's PDS and in the index. Delete them with the Phase 5 delete route. (Standalone scripts can't load the OAuth client: `.ts` imports go through CJS and hit ESM-only `multiformats`.)
+- Quick tunnels die when the laptop sleeps. A new URL means a new client_id: sign in again and re-install the PWA. On the Mac, curl may cache "host not found" for a new tunnel host for a while (use `--resolve`); phones are unaffected.
+- `lib/image/process.ts` has no imports by design (the e2e test depends on it).
+- Carried: Tap webhook 404s until Phase 3; `auth_state` never pruned.
+
+### Next step
+
+Human reviews the Phase 2 checkpoint (and decides on the `mealType` `minLength` Lexicon tweak). Then Phase 3: Tap webhook (reuse `cookRow`/`upsertCook`), identity handling, image proxy, global feed, profiles, cook detail, idempotency test, index rebuild procedure.
+
+---
+
+## Phase 1 — Lexicons and schema ✅ complete (merged, PR #2)
 
 Branch: `feature/phase-1-lexicons`
 

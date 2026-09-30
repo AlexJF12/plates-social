@@ -35,6 +35,10 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Generated Lexicon code is committed in `lib/lexicons-gen/`; import it only via `lib/lexicons.ts`. Tap records are JSON, so run `jsonToLex` before `$parse` (see `lib/lexicons.test.ts`).
 - `cook.images` is jsonb: insert `JSON.stringify(images)` (pg would send a JS array as a Postgres array). `date` columns come back as `'YYYY-MM-DD'` strings (type parser in `lib/db/index.ts`).
 - Throwaway scripts with top-level await must be `.mts`.
+- A standalone script can't import `lib/auth/client.ts` (tsx loads the `.ts` as CJS → ESM-only `multiformats` error). Do OAuth-session actions through a route on the dev server.
+- iOS Safari's canvas JPEG encoder writes its own small EXIF block. Never reject "any EXIF" — `lib/image/verify.ts` strips JPEG metadata losslessly instead.
+- Next renders an empty `role="alert"` (route announcer): in Playwright, scope alert lookups to the form.
+- Quick tunnels die when the laptop sleeps; a new URL = new client_id = sign in again + re-install the PWA.
 
 ---
 
