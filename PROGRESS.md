@@ -1,6 +1,55 @@
 # Progress
 
-## Current phase: 4 — Follows ⏸ checkpoint, verified, awaiting review (2026-09-29)
+## Current phase: 5 — Kudos, comments, delete ⏸ checkpoint, verified, awaiting review (2026-09-29)
+
+Branch: `feature/phase-5-social`
+
+### Built
+
+- `POST /api/kudos` `{cook, rkey}` / `DELETE /api/kudos` `{cook}`: same shape as follows. Client TID rkey reused on retry (lost response → `get` finds the landed record); already given → existing uri; not given → `{deleted: null}`. The strongRef cid comes from the indexed cook, and only **visible** cooks accept kudos (404 otherwise). Own cook → 400.
+- `POST /api/comment` `{cook, text, rkey}`: text trimmed, `comment.$parse` (1–500 graphemes, 5000 bytes) before the PDS; same retry pattern; returns the `CommentView` so the page appends it. `DELETE /api/comment` `{uri}`: only a uri in your own repo, comment collection, TID rkey (`isOwnRecordUri`, `lib/http.ts`). `GET /api/comment?cook=&cursor=`: comment paging.
+- `DELETE /api/cook` `{rkey}`: deletes your own cook (uri built from the session DID, so only yours).
+- `lib/social/write.ts`: `createKudos`, `createComment`, `deleteOwnRecord` (PDS `deleteRecord`, then the row). Read-your-own-writes on create, like follows. `deleteRecord` on a record that's already gone succeeds (verified), so delete retries are harmless.
+- Queries: `getComments` (oldest first, 20/page, cursor `sortAt~uri`, replaces the Phase 3 limit of 50), `getVisibleCook`, `getKudosUri`, `cookUriOf`. `getCookDetail().comments` is now a `CommentPage`.
+- **Orphan hiding (§6.2):** kudos/comments are only ever read through a visible cook (detail page, counts, `getComments` checks the cook exists and its author is active). Rows of others on a deleted/hidden cook are kept, and come back if the cook does.
+- Cook detail: `CookKudos` (count, avatars, "Give kudos"/"Kudos given" toggle in the accent colour, flips only after the server confirms), `CookComments` (infinite scroll, composer with grapheme + byte check and Retry, Delete on your own comments), `DeleteCookButton` (own cook; → your profile). `ConfirmDialog`: native `<dialog>` for both deletes.
+- `lib/http.ts`: `readJson`, `isOwnRecordUri`.
+- Tests: `lib/db/queries.test.ts` (+4: comment paging with sortAt ties, orphans on a deleted cook, orphans while the author is inactive + reappearing, `getKudosUri`), `lib/http.test.ts`.
+
+### Decisions not in the spec
+
+- **No kudos on your own cook** (Strava convention): no button, and the API returns 400.
+- Kudos toggle lives on the cook detail page only; feed cards show counts (§7). Kudos from the feed would be a small addition if wanted.
+- Comments are oldest first. A new comment is appended right away only when the list is fully loaded; otherwise it arrives with the last page.
+- Editing the comment text makes a new rkey (a different comment); retrying unchanged text reuses it.
+- Delete confirmations use an in-app `<dialog>`, not `window.confirm`. Destructive buttons are red (a second colour besides the accent, for delete only).
+- Only your own comments can be deleted (a cook's author can't remove others' comments: they're in other people's repos). §2.1 says the same.
+- Deleting a cook leaves your own kudos/comments on it in your repo (hidden like any orphan).
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 98/98. `pnpm test:e2e`: 8/8. Orphan tests mutation-checked (dropping the visible-cook clause in `getComments` fails both).
+- curl, signed out: POST/DELETE on `/api/kudos`, `/api/comment`, `/api/cook` → 401.
+- **Live writes to the human's repo (approved), minted cookie, through the dev server:**
+  - Comment on Bleeg: bad rkey/unknown cook/blank/501 graphemes/missing text/junk → 400/404; post → 200, text trimmed; retry same rkey → same uri, 1 record on the PDS; `getRecord` fields checked (strongRef cid = Bleeg's cid). **Lost response:** deleted the row, re-POSTed the same rkey with different text → returned the original record. **Tap:** deleted the row, `/repos/remove` + `/repos/add` → back in ~3 s, same createdAt/sortAt. Delete: another user's uri / a cook uri / empty → 400; delete → RecordNotFound on the PDS, row gone; delete again → 200.
+  - Kudos on a local-only fixture cook: own cook → 400, unknown cook → 404, bad rkey → 400; give → 200; retry and a double tap with a new rkey → same uri, 1 record; `getRecord` checked; lost-response and Tap re-delivery (~2 s) as above; remove → RecordNotFound, row gone; again → `{deleted: null}`.
+  - Cook delete on a throwaway 1-photo cook posted through `/api/cook`: bad/missing rkey → 400; delete → RecordNotFound, row gone, its photo 404s (thumb + full), page 404, a local-only fixture comment on it kept in Postgres but hidden from `/api/comment`; delete again → 200. Full Tap re-backfill afterwards → exactly BLT + Bleeg, nothing deleted resurfaced.
+  - Cleanup: PDS has only BLT + Bleeg, no kudos or comments; fixtures removed; temporary specs deleted.
+- Playwright at 375px, light + dark (throwaway specs, deleted): other person's cook (Give kudos, 25 comments = 20 + scroll-loaded 5, composer limits incl. a 500-grapheme/12 KB emoji string, Delete only on own comment, dialog open/cancel), own cook (Delete cook, no kudos button, dialog + Esc). No horizontal scroll, no console errors. Screenshots reviewed. **UI round trip with real writes:** kudos on → reload → still on → off; comment with a line break posted → count 26 → reload → delete via dialog → gone; own cook deleted via dialog → lands on profile.
+- **Human, installed app (2026-09-29):** posted and deleted a comment. Not tried on the phone: cook delete (checked via API + browser), kudos (needs another person's cook).
+
+### Known issues
+
+- **Deleted item briefly reappears (seen once, not reproduced).** In the UI round trip, a just-deleted cook was still on the profile for several seconds, then disappeared by itself; the PDS record was gone. Suspected cause: Tap delivered the create event late (a forced re-backfill had just run), re-inserting the row after the delete; Tap's delete event then removed it. Two attempts to reproduce (post + immediate delete, normally and during a backfill) didn't. **Human decided (2026-09-29): accept as a known issue.** If it matters later: remember deletes with the repo rev from `deleteRecord` and have the indexer ignore older creates for that uri.
+- Carried: duplicate kudos/follow records (two devices) resurface after a rebuild; quick-tunnel URL changes; `auth_state` never pruned; Lexicon `mealType` minLength decision still open; Tap's webhook retry has no visible backoff.
+
+### Next step
+
+PR open for Phase 5; merge after review. Then Phase 6: stats, design pass, install hints, offline fallback, empty/loading/error states, denylist, device walkthrough.
+
+---
+
+## Phase 4 — Follows ✅ complete (merged, PR #5)
 
 Branch: `feature/phase-4-follows`
 
@@ -54,7 +103,7 @@ Branch: `feature/phase-4-follows`
 
 ### Next step
 
-PR #5 open, all checks done. Merge, then Phase 5: kudos, comments, delete, orphan hiding. Then Phase 5: kudos, comments, delete, orphan hiding.
+Merged (PR #5). Then Phase 5: kudos, comments, delete, orphan hiding.
 
 ---
 

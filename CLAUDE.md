@@ -47,6 +47,8 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Playwright on signed-in pages: the human approved minting a session cookie for their DID (HMAC with `SESSION_SECRET`), injected in the test context only, never committed.
 - To prove a record arrives through Tap (not just read-your-own-writes): delete its row, then Tap `/repos/remove` + `/repos/add` for the DID; the backfill re-delivers it within seconds.
 - tsx scripts can't import `lib/` modules that reach `@atproto/lex`/`tap` (same CJS/ESM error). For a one-off live check, use a temporary Vitest file and delete it.
+- Playwright screenshots of pages with a textarea: pass `caret: "initial"`. The default hides the caret by injecting a style, and a screenshot taken before hydration then logs a hydration mismatch.
+- `deleteRecord` on a record that's already gone succeeds, so delete routes can be retried freely.
 - The only indexed cook author locally is the human, so screens needing other people (import list, other profiles) need local-only fixture rows; remove them afterwards.
 
 ---

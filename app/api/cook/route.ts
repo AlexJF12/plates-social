@@ -5,9 +5,12 @@ import { getSession } from "@/lib/auth/session";
 import { COLLECTIONS } from "@/lib/config";
 import { MEAL_TYPES } from "@/lib/cook/mealTypes";
 import { getDb } from "@/lib/db";
+import { cookUriOf } from "@/lib/db/queries";
+import { readJson } from "@/lib/http";
 import { ensureAccount } from "@/lib/indexer/account";
 import { cookRow, upsertCook } from "@/lib/indexer/cook";
 import { cook } from "@/lib/lexicons";
+import { deleteOwnRecord } from "@/lib/social/write";
 
 type Body = {
   rkey?: unknown;
@@ -110,4 +113,26 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ uri, cid });
+}
+
+// DELETE { rkey } — delete one of your own cooks (§6.6). Its photos stop
+// being served at once (the image proxy only serves indexed cooks), and the
+// PDS garbage-collects the blobs. Kudos and comments others left on it stay
+// in their repos and in the index, hidden (§6.2).
+export async function DELETE(request: NextRequest) {
+  const session = await getSession();
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const rkey = (await readJson(request))?.rkey;
+  if (typeof rkey !== "string" || !isValidTid(rkey)) {
+    return NextResponse.json({ error: "Invalid rkey" }, { status: 400 });
+  }
+  const uri = cookUriOf(session.did, rkey);
+  try {
+    await deleteOwnRecord(new Client(session), getDb(), "cook", uri);
+    return NextResponse.json({ deleted: uri });
+  } catch (err) {
+    console.error("cook delete failed", err);
+    return NextResponse.json({ error: "Deleting your cook failed on your PDS" }, { status: 502 });
+  }
 }

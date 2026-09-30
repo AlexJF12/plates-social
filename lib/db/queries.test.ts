@@ -2,7 +2,17 @@ import type { Kysely } from "kysely";
 import { afterAll, describe, expect, it } from "vitest";
 import { COLLECTIONS } from "../config";
 import { getDb } from ".";
-import { getAccount, getCookDetail, getCookFeed, getFollowUri, getImportCandidates, PAGE_SIZE } from "./queries";
+import {
+  getAccount,
+  getComments,
+  getCookDetail,
+  getCookFeed,
+  getFollowUri,
+  getImportCandidates,
+  getKudosUri,
+  getVisibleCook,
+  PAGE_SIZE,
+} from "./queries";
 import type { DatabaseSchema } from "./schema";
 import { inRollback } from "./testing";
 
@@ -83,14 +93,14 @@ describe("getCookFeed", () => {
 
       let alice = (await getCookFeed({ db, authorDid: ALICE })).items[0];
       expect([alice.kudosCount, alice.commentCount]).toEqual([1, 1]);
-      expect((await getCookDetail(ALICE, rkey(0), db))?.comments).toHaveLength(1);
+      expect((await getCookDetail(ALICE, rkey(0), db))?.comments.items).toHaveLength(1);
 
       await db.updateTable("account").set({ active: false }).where("did", "=", BOB).execute();
       alice = (await getCookFeed({ db, authorDid: ALICE })).items[0];
       expect([alice.kudosCount, alice.commentCount]).toEqual([0, 0]);
       expect((await getCookFeed({ db, authorDid: BOB })).items).toEqual([]);
       const detail = await getCookDetail(ALICE, rkey(0), db);
-      expect([detail?.kudos, detail?.comments]).toEqual([[], []]);
+      expect([detail?.kudos, detail?.comments.items]).toEqual([[], []]);
       expect(await getCookDetail(BOB, rkey(0), db)).toBeNull();
     });
   });
@@ -188,6 +198,101 @@ describe("getImportCandidates", () => {
       await db.updateTable("account").set({ active: false }).where("did", "=", BOB).execute();
       expect(await getImportCandidates(ALICE, bsky, db)).toEqual([]);
       expect(await getImportCandidates(ALICE, [], db)).toEqual([]);
+    });
+  });
+});
+
+async function addComment(db: Kysely<DatabaseSchema>, author: string, subjectUri: string, i: number, sortAt: Date) {
+  await db
+    .insertInto("comment")
+    .values({ uri: `at://${author}/${COLLECTIONS.comment}/${rkey(i)}`, authorDid: author, subjectUri, text: `c${i}`, createdAt: sortAt, sortAt })
+    .execute();
+}
+
+describe("getComments", () => {
+  it("pages 20 at a time, oldest first, with no gaps or repeats, even when sortAt ties", async () => {
+    await inRollback(async (db) => {
+      await seed(db, ALICE, 1, () => new Date("2020-01-01T00:00:00Z"));
+      await seed(db, BOB, 0, () => new Date());
+      const subject = cookUri(ALICE, 0);
+      const base = Date.parse("2020-01-02T00:00:00Z");
+      for (let i = 0; i < 45; i++) await addComment(db, BOB, subject, i, new Date(base + Math.floor(i / 2) * 60_000));
+
+      const pages = [];
+      let cursor: string | null = null;
+      do {
+        const page = await getComments({ db, cookUri: subject, cursor });
+        pages.push(page.items.map((c) => c.text));
+        cursor = page.cursor;
+      } while (cursor);
+      expect(pages.map((p) => p.length)).toEqual([PAGE_SIZE, PAGE_SIZE, 5]);
+      expect(pages.flat()).toEqual(Array.from({ length: 45 }, (_, i) => `c${i}`));
+    });
+  });
+});
+
+describe("orphans (§6.2)", () => {
+  // Bob's kudos and comment on Alice's cook: hidden while the cook is gone
+  // or hidden, but the rows (Bob's records) are kept.
+  async function setup(db: Kysely<DatabaseSchema>) {
+    await seed(db, ALICE, 1, () => new Date("2020-01-01T00:00:00Z"));
+    await seed(db, BOB, 1, () => new Date("2020-01-01T00:00:00Z"));
+    const subject = cookUri(ALICE, 0);
+    await db
+      .insertInto("kudos")
+      .values({ uri: `at://${BOB}/${COLLECTIONS.kudos}/${rkey(0)}`, authorDid: BOB, subjectUri: subject, subjectCid: CID, createdAt: new Date() })
+      .execute();
+    await addComment(db, BOB, subject, 0, new Date());
+    return subject;
+  }
+  const rowCounts = async (db: Kysely<DatabaseSchema>) =>
+    Promise.all(
+      (["kudos", "comment"] as const).map(async (t) =>
+        Number((await db.selectFrom(t).select((eb) => eb.fn.countAll().as("n")).where("authorDid", "=", BOB).executeTakeFirstOrThrow()).n),
+      ),
+    );
+
+  it("hides kudos and comments on a deleted cook, keeping the rows", async () => {
+    await inRollback(async (db) => {
+      const subject = await setup(db);
+      expect((await getComments({ db, cookUri: subject })).items).toHaveLength(1);
+      expect(await getVisibleCook(subject, db)).not.toBeNull();
+
+      await db.deleteFrom("cook").where("uri", "=", subject).execute();
+      expect(await getCookDetail(ALICE, rkey(0), db)).toBeNull();
+      expect((await getComments({ db, cookUri: subject })).items).toEqual([]);
+      expect(await getVisibleCook(subject, db)).toBeNull();
+      expect(await rowCounts(db)).toEqual([1, 1]);
+      // Bob's own cook still shows its counts untouched.
+      expect((await getCookFeed({ db, authorDid: BOB })).items).toHaveLength(1);
+    });
+  });
+
+  it("hides them while the cook's author is inactive, and shows them again after", async () => {
+    await inRollback(async (db) => {
+      const subject = await setup(db);
+      await db.updateTable("account").set({ active: false }).where("did", "=", ALICE).execute();
+      expect(await getCookDetail(ALICE, rkey(0), db)).toBeNull();
+      expect((await getComments({ db, cookUri: subject })).items).toEqual([]);
+      expect(await getVisibleCook(subject, db)).toBeNull();
+      expect(await rowCounts(db)).toEqual([1, 1]);
+
+      await db.updateTable("account").set({ active: true }).where("did", "=", ALICE).execute();
+      const detail = await getCookDetail(ALICE, rkey(0), db);
+      expect([detail?.kudos.length, detail?.comments.items.length, detail?.cook.kudosCount]).toEqual([1, 1, 1]);
+    });
+  });
+});
+
+describe("getKudosUri", () => {
+  it("returns the viewer's kudos on that cook only", async () => {
+    await inRollback(async (db) => {
+      const subject = cookUri(ALICE, 0);
+      const uri = `at://${BOB}/${COLLECTIONS.kudos}/${rkey(0)}`;
+      await db.insertInto("kudos").values({ uri, authorDid: BOB, subjectUri: subject, subjectCid: CID, createdAt: new Date() }).execute();
+      expect(await getKudosUri(BOB, subject, db)).toBe(uri);
+      expect(await getKudosUri(ALICE, subject, db)).toBeNull();
+      expect(await getKudosUri(BOB, cookUri(ALICE, 1), db)).toBeNull();
     });
   });
 });
