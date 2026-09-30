@@ -1,6 +1,64 @@
 # Progress
 
-## Current phase: 5 — Kudos, comments, delete ⏸ checkpoint, verified, awaiting review (2026-09-29)
+## Current phase: 6 — Stats and polish ⏸ checkpoint, awaiting the device walkthrough (2026-09-29)
+
+Branch: `feature/phase-6-polish`
+
+### Built
+
+- **Stats (§6.4)** `lib/cook/stats.ts`: `weekStart` (Monday), `monthStart`, `todayIn(tz)`, `statsWindow(now)`, `countStats(days, today)`. The server sends per-day counts (`getCookDayCounts`, grouped by `cookedLocalDate`) for a window wide enough for every time zone (UTC−12…+14 → the UTC date ±1 day, then the whole week and month around each); `components/ProfileStats.tsx` picks the viewer's own today in the browser (`useSyncExternalStore`, re-read on `visibilitychange` so an app left open past midnight updates). Server render shows "–" until hydration. Shown on every profile as two tiles: "This week", "This month".
+- **Denylist (§7)** `DENYLIST_DIDS` (`lib/denylist.ts`, commas/whitespace, invalid entries logged and ignored). `visibleAccount(table)` in `lib/db/queries.ts` = active **and** not denylisted, replacing every `active = true` check in the queries and the image proxy's `isReferenced`. Read-time only, nothing deleted: removing a DID brings its content straight back. `.env.example` + README.
+- **Service worker (§7.1)** `public/sw.js`: precaches `/offline` only; intercepts GET navigations only and falls back to `/offline` on network failure; skips `/oauth/*` entirely; `skipWaiting` + `clients.claim`, old caches deleted on activate. `/sw.js` served `Cache-Control: no-cache` (next.config `headers`) and registered with `updateViaCache: "none"` (`components/ServiceWorker.tsx`).
+- `app/offline/route.ts`: self-contained HTML (inline CSS, light/dark, safe areas, "Try again" = reload), built from `APP_NAME`/`THEME`.
+- **Install hint (§7.1)** `components/InstallHint.tsx` in the root layout (so it shows on the sign-in page too, before anyone signs in in Safari): iOS Safari → "Add to Home Screen: tap Share, then Add to Home Screen." with the Share glyph; Android → holds `beforeinstallprompt` and offers **Install**. Never when `navigator.standalone` or `display-mode: standalone`. Dismiss (or using the Install prompt, either outcome) stores `installHintDismissed` in localStorage. An inline `<head>` script (`lib/installPrompt.ts`) catches `beforeinstallprompt` fired before hydration.
+- **Loading/error/not-found:** `loading.tsx` skeletons for following, global, profile, cook (`components/Skeletons.tsx`); `app/(app)/error.tsx` (keeps the tab bar) and `app/error.tsx` (errors in the `(app)` layout), both `ErrorState` with **Try again** (`retry()`, this Next version's API) and a link to the feed; `app/(app)/not-found.tsx` (deleted/hidden cook or profile: back button + tab bar) and `app/not-found.tsx` (unmatched URLs).
+- `(app)/layout.tsx` now redirects signed-out requests itself. Needed because with `loading.tsx`, a page's `redirect()` happens mid-stream (200 + meta refresh); from the layout it's a plain 307 again. Pages keep their own checks.
+- Tests: `lib/cook/stats.test.ts` (11: Monday weeks across month/year, viewer zones either side of midnight UTC, author offsets crossing midnight UTC (New York/Tokyo/Kiribati/Hawaii), week spanning two months, `statsWindow` covers every zone at month/year edges); `lib/db/queries.test.ts` (+2: denylist hides everywhere and un-hides, `getCookDayCounts`); `e2e/pwa.spec.ts` (4: SW caches only `/offline` and serves it offline, iOS hint once, none in standalone, early Android prompt → Install).
+
+### Decisions not in the spec
+
+- Stats are bucketed in the browser from server day counts (the viewer's zone is the browser's own), rather than the browser sending its zone to the server. Same result, no cookie or extra request, and correct when travelling. Cooks with a future `cookedAt` later in the current week/month count.
+- Denylist is read-time, not index-time (reversible; indexing continues). A denylisted user can still sign in and write to their own repo; everyone, including them, just doesn't see it here.
+- The SW never touches `/oauth/*` (sign-in is the riskiest flow on iOS). No navigation preload (kept minimal). Next's experimental `useOffline` was not used (§7.1 asks for an offline page only).
+- Install hint lives in the root layout, top of the page, in the flow (scrolls away, never covers the tab bar). Shown on the sign-in page so people install *before* signing in (iOS home-screen apps have their own cookies).
+- Only other iOS browsers/in-app web views are excluded from the iOS hint (the instructions are Safari's).
+- Profile loading skeleton has no back button (it isn't known yet if it's your own profile); the tab bar is there meanwhile.
+- No pull-to-refresh/overscroll changes: nothing in the UI fights it (carousels already use `overscroll-x-contain`).
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 111/111. `pnpm test:e2e`: 12/12. Mutation checks: dropping the denylist clause from `visibleAccount` fails the denylist test; emptying the `<head>` capture script fails the Android test.
+- curl: `/sw.js` → `Cache-Control: no-cache`, JS content type; `/offline` → 200 HTML; signed-out `/global`, `/following`, `/log`, `/import`, `/profile/x`, `/cook/a/b` → 307 to `/`; unmatched URL → 404.
+- Playwright at 375px, light + dark (throwaway specs, deleted), signed in with a minted cookie for the human's DID, plus **local-only fixture rows** (an account with 2 cooks, a kudos and a comment on Bleeg, a follow row; removed afterwards, index back to 2 cooks/1 account/no kudos, comments, follows): sign-in with iOS hint, following, global, own profile (stats 2/2), other profile (stats 1/2: one cook this week, one last week), own and other cook detail, log, import (empty state), not-found (cook, profile, unmatched URL), offline page, desktop 1280px (centered column). No horizontal scroll, no console errors. Screenshots reviewed.
+- **Real failure states:** paused Postgres → tapping a tab shows the profile/following skeletons; stopped Postgres → in-app error boundary (tab bar kept) on client navigation and root error boundary on a full load; restarted → **Try again** recovered the feed.
+- SW in Chromium: controls the page, Cache Storage holds exactly `offline-v1 /offline`, offline navigation shows the fallback at the original URL, Try again after reconnecting loads the real page.
+- Not verified: the denylist through the running dev server (needs an env change + restart); it's covered by the query test, and the proxy uses the same `visibleAccount`. Nothing in Phase 6 writes records, so there are no PDS/Tap checks this phase.
+
+### Device walkthrough (human, pending)
+
+On the iPhone (tunnel URL, installed app), and Android if available:
+
+1. **Safari, not installed:** the Add to Home Screen banner shows at the top of the sign-in page; × hides it and it stays hidden after reload.
+2. Install; open from the home screen: **no banner**, icon, status bar, safe areas (notch, home indicator) look right. (Carried from Phase 0.)
+3. Sign out and sign in again **from inside the installed app** (the service worker is now active; it doesn't touch `/oauth/*`, but this is the flow to re-check).
+4. Profile: "This week" / "This month" match what you expect (BLT Mon 28 Sep and Bleeg Tue 29 Sep → 2 / 2 this week).
+5. Scroll following/global/profile/cook pages; tab between them (skeletons may flash briefly on a slow network).
+6. Airplane mode, then pull down / open a profile you haven't visited: the "You're offline" page; turn the network back on → Try again.
+7. Log a cook from the installed app (camera + library) to be sure nothing regressed; delete it afterwards if you like.
+8. Android Chrome (if available): Install button in the banner → system install dialog; installed app opens without the banner.
+
+### Known issues
+
+- In dev, Next's "N" indicator overlaps the Following tab (dev only; Playwright clicks there need `dispatchEvent`).
+- Carried: deleted item may briefly reappear (accepted); duplicate kudos/follow records resurface after a rebuild; quick-tunnel URL changes; `auth_state` never pruned; Lexicon `mealType` minLength decision still open; Tap's webhook retry has no visible backoff.
+
+### Next step
+
+Human: review, then the device walkthrough above. Then PR for Phase 6. Phase 7 is blocked until the human provides a domain.
+
+---
+
+## Phase 5 — Kudos, comments, delete ✅ complete (merged, PR #6)
 
 Branch: `feature/phase-5-social`
 
@@ -45,7 +103,7 @@ Branch: `feature/phase-5-social`
 
 ### Next step
 
-PR open for Phase 5; merge after review. Then Phase 6: stats, design pass, install hints, offline fallback, empty/loading/error states, denylist, device walkthrough.
+Merged (PR #6). Then Phase 6.
 
 ---
 

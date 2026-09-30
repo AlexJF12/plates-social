@@ -5,21 +5,23 @@ import { CookFeed } from "@/components/CookFeed";
 import { FollowButton } from "@/components/FollowButton";
 import { LogoutButton } from "@/components/LogoutButton";
 import { PageHeader } from "@/components/PageHeader";
+import { ProfileStats } from "@/components/ProfileStats";
 import { getDid } from "@/lib/auth/session";
-import { getAccount, getCookFeed, getFollowUri } from "@/lib/db/queries";
+import { statsWindow } from "@/lib/cook/stats";
+import { getAccount, getCookDayCounts, getCookFeed, getFollowUri } from "@/lib/db/queries";
 import { displayName } from "@/lib/links";
 
-// A person's cooks, newest first. [actor] is a handle or a DID. Others get a
-// follow button; your own has the Bluesky import and sign-out. Stats
-// arrive in Phase 6.
+// A person's stats and cooks, newest first. [actor] is a handle or a DID.
+// Others get a follow button; your own has the Bluesky import and sign-out.
 export default async function ProfilePage({ params }: PageProps<"/profile/[actor]">) {
   const viewer = await getDid();
   if (!viewer) redirect("/");
   const account = await getAccount(decodeURIComponent((await params).actor));
   if (!account) notFound();
   const isMe = account.did === viewer;
-  const [initial, followUri] = await Promise.all([
+  const [initial, days, followUri] = await Promise.all([
     getCookFeed({ authorDid: account.did }),
+    getCookDayCounts(account.did, statsWindow()),
     isMe ? null : getFollowUri(viewer, account.did),
   ]);
 
@@ -36,6 +38,7 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
             <p className="truncate text-sm text-muted">{account.handle ? `@${account.handle}` : account.did}</p>
           </div>
         </section>
+        <ProfileStats days={days} />
         <section className="flex flex-wrap items-start gap-2 px-4 pb-4">
           {isMe ? (
             <>

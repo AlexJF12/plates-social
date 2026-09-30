@@ -75,6 +75,16 @@ To go back to plain localhost dev, empty `PUBLIC_URL` and restart.
 
 **Install on iPhone:** open the tunnel URL in Safari → Share → Add to Home Screen → open from the home screen → sign in.
 
+## PWA: offline page and install hint
+
+`public/sw.js` is deliberately minimal: it caches one response, `/offline` (a self-contained page, `app/offline/route.ts`), and shows it when a page navigation fails. It never caches feeds, API responses, images or anything auth-related, and it leaves `/oauth/*` entirely alone. After changing `/offline`, bump `CACHE` in `sw.js` so installed apps fetch the new one. To clear it in a browser: DevTools → Application → Service workers → Unregister.
+
+The install hint (`components/InstallHint.tsx`) shows once, until dismissed, and never in the installed app: instructions in iOS Safari, an Install button when Android Chrome fires `beforeinstallprompt`. To see it again, clear `installHintDismissed` from localStorage.
+
+## Hiding an account (denylist)
+
+Set `DENYLIST_DIDS` (DIDs separated by commas or spaces) and restart the app; on Fly, `fly secrets set` does the restart, so no code deploy is needed. It's applied when reading (feeds, profiles, cook pages, kudos, comments, counts, stats, import, image proxy) next to the inactive-account check. Nothing is deleted from the index, so removing a DID brings its content straight back.
+
 ## Lexicons
 
 Record schemas live in `lexicons/com/example/cooklog/*.json`. `com.atproto.repo.strongRef` was fetched with `lex install` and is pinned by CID in `lexicons.json`. After editing any Lexicon JSON, regenerate the TypeScript and commit it:
@@ -87,7 +97,7 @@ App code imports Lexicons only through `lib/lexicons.ts`.
 
 ## Images
 
-`/api/img/<did>/<cid>?size=avatar|thumb|full` serves photos and avatars: it only serves CIDs referenced by an indexed cook or profile from an active account, fetches the blob from the author's PDS (https only), checks the bytes against the CID, resizes to WebP with sharp and caches it on disk in `.cache/img/` (override with `IMAGE_CACHE_DIR`). Delete that folder any time; it refills on demand.
+`/api/img/<did>/<cid>?size=avatar|thumb|full` serves photos and avatars: it only serves CIDs referenced by an indexed cook or profile from a visible account (active, not denylisted), fetches the blob from the author's PDS (https only), checks the bytes against the CID, resizes to WebP with sharp and caches it on disk in `.cache/img/` (override with `IMAGE_CACHE_DIR`). Delete that folder any time; it refills on demand.
 
 ## Tests
 

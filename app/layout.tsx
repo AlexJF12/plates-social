@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { InstallHint } from "@/components/InstallHint";
+import { ServiceWorker } from "@/components/ServiceWorker";
 import { APP_NAME, THEME } from "@/lib/config";
+import { CAPTURE_INSTALL_PROMPT } from "@/lib/installPrompt";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -28,13 +31,18 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className="h-full antialiased">
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: CAPTURE_INSTALL_PROMPT }} />
+      </head>
       {/* Extensions often add attributes to <body> before hydration; this
           ignores attribute diffs on this element only, not its children. */}
       <body
         className="min-h-full flex flex-col pt-safe pb-safe px-safe"
         suppressHydrationWarning
       >
+        <InstallHint />
         {children}
+        <ServiceWorker />
       </body>
     </html>
   );
