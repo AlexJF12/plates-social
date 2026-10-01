@@ -13,13 +13,19 @@ export const COLLECTIONS = {
   follow: `${NS}.follow`,
 } as const;
 
-// Granular scopes only (§5). Never `transition:generic`, never app.bsky.*.
+// Bluesky posts, written only by "Share to Bluesky" (create only: the app
+// never edits or deletes them). The one app.bsky.* collection we write.
+export const BSKY_POST = "app.bsky.feed.post";
+
+// Granular scopes only (§5). Never `transition:generic`; the only app.bsky.*
+// write is creating posts when the user shares a cook.
 export const SCOPE = [
   "atproto",
   `repo:${COLLECTIONS.cook}`,
   `repo:${COLLECTIONS.kudos}`,
   `repo:${COLLECTIONS.comment}`,
   `repo:${COLLECTIONS.follow}`,
+  `repo:${BSKY_POST}?action=create`,
   "blob:image/*",
 ].join(" ");
 

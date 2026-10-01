@@ -7,15 +7,18 @@ import {
   getSessionSecret,
 } from "@/lib/auth/cookie";
 import { getDb } from "@/lib/db";
+import { safeNext } from "@/lib/links";
 import { getTap } from "@/lib/tap";
 
 export async function GET(request: NextRequest) {
   let did: string;
+  let next: string | null = null;
   try {
     const client = await getOAuthClient();
     // Exchanges the code for tokens and stores them in auth_session.
-    const { session } = await client.callback(request.nextUrl.searchParams);
+    const { session, state } = await client.callback(request.nextUrl.searchParams);
     did = session.did;
+    next = safeNext(state);
   } catch (error) {
     console.error("OAuth callback error:", error);
     return NextResponse.redirect(new URL("/?error=login_failed", PUBLIC_URL));
@@ -30,7 +33,8 @@ export async function GET(request: NextRequest) {
     console.error(`Tap addRepos failed for ${did}:`, error);
   }
 
-  // First sign-in → offer the Bluesky import once (§6.3). If recording it
+  // First sign-in → offer the Bluesky import once (§6.3), even when sign-in
+  // started from a shared cook (`next`). Otherwise go back to `next`. If recording it
   // fails, fall through to the normal landing rather than failing sign-in.
   let firstLogin = false;
   try {
@@ -45,7 +49,7 @@ export async function GET(request: NextRequest) {
   }
 
   const response = NextResponse.redirect(
-    new URL(firstLogin ? "/import?first=1" : "/", PUBLIC_URL),
+    new URL(firstLogin ? "/import?first=1" : (next ?? "/"), PUBLIC_URL),
   );
   response.cookies.set(
     SESSION_COOKIE,
