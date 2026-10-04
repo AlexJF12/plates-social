@@ -1,6 +1,55 @@
 # Progress
 
-## Current phase: 6.6 — Handle typeahead, best cook, search ✅ approved by the human on the iPhone, PR #10 open (2026-09-30)
+## Current: Sharing (human-requested, outside the phase plan) — built, needs the human's live PDS + iPhone check (2026-10-01)
+
+Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `app.bsky.*` write), §2.1, §2.2, §5 updated.
+
+### Built
+
+- **Share sheet** (`components/ShareCookButton.tsx`): a share icon in the cook detail header (next to delete on your own cooks) opens a `<dialog>` with a preview (first photo, the Bluesky text, photo count) and:
+  - **Post to Bluesky** (your own cooks only) → `POST /api/share/bluesky { cook, rkey }`. States: Posting… / error + retry (same TID) / "Posted to Bluesky" + **View on Bluesky** / re-auth.
+  - **Share…** (native iOS/Android share sheet; was "Send as a message"): photos are fetched from the image proxy and re-encoded to JPEG **when the sheet opens** (iOS only allows `navigator.share` directly from a tap), then `navigator.share({ files, text })` with "dish\n\nnote\n\nlink" (link in the text: some targets drop `url` when files are attached). No files support → text only; no Web Share → `sms:?&body=`. Cancelling the share sheet is silent.
+  - **Copy link**.
+- **`/api/share/bluesky`** (`lib/social/bluesky.ts`): signed in; the cook must be visible and yours (403 otherwise: the post reuses blobs that are only in the author's repo); checks the OAuth token's scope and returns `403 { reauth: true }` if it lacks `repo:app.bsky.feed.post`; reads the cook record back from your PDS (`client.get(cook)`, for the exact blob refs incl. size) and writes one `app.bsky.feed.post`: text from `blueskyPostText` (`lib/share.ts`: dish, note cut with "…" to fit 300 graphemes, link always whole) with a link facet (UTF-8 byte offsets), `app.bsky.embed.images` with alt (empty string if none) and aspect ratio. TID rkey from the client, reused on retry; an existing record at that rkey counts as done. Not indexed (Tap only delivers `NS.*` + profiles), so §0.14 holds.
+- **Scope**: `repo:app.bsky.feed.post?action=create` added to `SCOPE` (create only). Existing sessions don't have it, so the first "Post to Bluesky" shows "Sign in again", which runs OAuth for the same DID and returns to the cook.
+- **Public cook page**: moved to `app/(cook)/cook/[did]/[rkey]` with its own layout (`AppShell` = tab bar, extracted from `(app)/layout.tsx`, only when signed in) and re-exported not-found/error. Signed out: wordmark header with **Sign in**, photos, dish, date, note, "N kudos · M comments", and **Sign in to give kudos**; no kudos list, comments or profile links (profiles need sign-in). `generateMetadata`: title "dish · name", description = note (200 chars), `og:image`/`twitter:image` = the first photo's thumb, `robots: noindex`, canonical.
+- **Return after sign-in**: `/?next=<path>` → `LoginForm` → `/oauth/login` → OAuth `state` → callback redirects there (first-ever sign-in still goes to the import offer, §6.3). Every hop validates with `safeNext` (same-site paths only; rejects `//`, `/\`, absolute URLs, whitespace, >512 chars). A signed-in visit to `/?next=` redirects to it.
+
+### Decisions not in the spec
+
+- Bluesky posting is **author only** (others' photo blobs aren't in your repo; re-uploading someone else's photos to your Bluesky felt wrong). Anyone signed in can send any cook as a message or copy its link.
+- No generated `app.bsky.feed.post` Lexicon code: `lex install` needs PLC/DNS (blocked in the cloud session), and the post's lexicon pulls in a large chunk of `app.bsky.*`. The record is built by `bskyPostRecord` (unit-tested) and validated by the PDS on write. Easy to switch to generated code later.
+- The post shows the full URL as the link text (no shortening).
+- One-tap post from the sheet, no extra confirm: the sheet already shows a preview and the button is explicit.
+- Public page is `noindex`. OG images are WebP (the proxy's format); most previewers accept it, but it's unverified for every target.
+- Links use `PUBLIC_URL` (server, Bluesky post) / `window.location.origin` (messages, copy). Until there's a domain these are tunnel URLs that stop working when the tunnel changes.
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 149/149 (new `lib/share.test.ts` 9: text, facets with emoji/accents, 300-grapheme cut, exact fit, no-room, `safeNext`; `lib/social/bluesky.test.ts` 7: scope check, record shape reusing blob refs, create / retry-no-duplicate / lost-response / real failure with a fake client).
+- `pnpm test:e2e` (existing): 17/17.
+- `curl`: `/api/share/bluesky` signed out → 401; the public cook page → 200 with the OG/Twitter/robots tags.
+- Throwaway Playwright spec at 375px (deleted), with local-only fixture rows (deleted, index back to empty) and a minted cookie: public page light/dark (no tab bar, no share, Sign in → `/?next=` keeps the cook path, no horizontal scroll); own cook sheet light/dark (preview has dish + absolute link); someone else's cook (no Post to Bluesky, no delete); Post to Bluesky stubbed: 502 → error, retry → "View on Bluesky", both requests carry the same rkey and the cook uri; stubbed reauth → "Sign in again" posts `{ handle: <did>, next: <cook path> }` to `/oauth/login`; `navigator.share` stubbed: 2 files `cook-1.jpg`/`cook-2.jpg` `image/jpeg`, text exactly "dish\n\nnote\n\nlink", no `url`; Copy link puts the absolute URL on the clipboard. No console errors.
+- **Not verified (cloud session had no PDS/Bluesky network access, no Docker; Postgres 16 ran natively):** a real post on a PDS, `getRecord` of it, the OAuth re-consent with the new scope, the `state` round trip, and the iOS share sheet with photos. These are the human steps below.
+
+### Human verification
+
+1. `pnpm dev` (+ tunnel, set `PUBLIC_URL`), open one of your cooks, Share → **Post to Bluesky**. Expect "Sign in again" (old session lacks the scope); approve the new permission, you land back on the cook. Share → Post to Bluesky again → "View on Bluesky". Check the post: dish, note, link (tappable), all photos with alt.
+2. `com.atproto.repo.getRecord` for `app.bsky.feed.post/<rkey>`: text, facet byte range covers the URL, embed images reference the same CIDs as the cook.
+3. On the iPhone: Share → **Share…** → Messages (and try another app, e.g. WhatsApp): photos + text + link. Open the link signed out (private tab): public page, then Sign in returns to the cook.
+
+### Known issues
+
+- iOS share targets differ in how they treat text with files; Messages is the target checked by tests only via a stub.
+- Carried: dev "N" indicator over the Feed tab; orange placeholder icon (Phase 7).
+
+### Next step
+
+Human: run the verification above, then merge. Phase 7 is still blocked on a domain.
+
+---
+
+## Phase 6.6 — Handle typeahead, best cook, search ✅ approved by the human on the iPhone, PR #10 open (2026-09-30)
 
 Branch: `feature/phase-6.6` (from main after PR #8/#9). Spec: SPEC §8 Phase 6.6; §2.1, §2.2 and §7 updated to match what was built.
 

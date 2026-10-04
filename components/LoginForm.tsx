@@ -19,7 +19,8 @@ type Suggestion = { did: string; handle: string; displayName?: string; avatar?: 
 const isSuggestion = (a: unknown): a is Suggestion =>
   !!a && typeof a === "object" && typeof (a as Suggestion).did === "string" && typeof (a as Suggestion).handle === "string";
 
-export function LoginForm() {
+// `next`: a path to land on after sign-in (validated again on the server).
+export function LoginForm({ next = null }: { next?: string | null }) {
   const [handle, setHandle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,7 +70,7 @@ export function LoginForm() {
       const res = await fetch("/oauth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ handle: h }),
+        body: JSON.stringify({ handle: h, next }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sign-in failed");

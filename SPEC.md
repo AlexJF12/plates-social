@@ -23,7 +23,7 @@ The human you are working with reads and reviews code comfortably. Keep explanat
    atproto libraries move fast. If this spec's description of a library API conflicts with current docs or source, follow the docs and tell the human.
 3. **Namespace placeholder.** There is no app name or domain yet. All Lexicon IDs use the namespace `com.example.cooklog`, stored in **one** config constant (`NS`). The app display name is also one constant (`APP_NAME = "Cooklog"`). Generated Lexicon code must be imported through a single re-export module (e.g. `lib/lexicons.ts`), so a later rename means regenerating code and editing one file. **Never deploy or publish Lexicons while `NS` starts with `com.example`.** The real namespace is permanent: it gets stamped into every record every user writes.
 4. **Scope discipline.** Build exactly what §2 lists. Do not add features from §2.2, and do not scaffold for them.
-5. **Least privilege.** Request only the granular OAuth scopes in §5. Never request `transition:generic`. Never write to any `app.bsky.*` collection.
+5. **Least privilege.** Request only the granular OAuth scopes in §5. Never request `transition:generic`. Never write to any `app.bsky.*` collection, with one exception approved by the human: creating an `app.bsky.feed.post` when the user taps "Post to Bluesky" on their own cook (§2.1, create only, never edit or delete).
 6. **Treat network records as untrusted input.** Anyone can write any record to their own repo. Validate every indexed record against its Lexicon and enforce every limit in this spec at index time, not only in the UI.
 
 ### Working rules
@@ -84,10 +84,14 @@ The human you are working with reads and reviews code comfortably. Keep explanat
 - **Stats**: number of cooks this week and this month.
 - **Best cook** (Phase 6.6): per calendar month (the author's local month) and known meal type, the cook with the most distinct kudos authors (not self, visible accounts only; ≥ 1 to win; ties by earliest `cookedAt`, then lowest `uri`). Computed from the index on read, never stored. A Best tab per month (`/best/YYYY-MM`), a badge on winning cooks for completed months, and a "Best cooks" row on profiles.
 - **Search** (Phase 6.6, `/search?q=&meal=`): dish names (case- and accent-insensitive substring) with a meal-type filter, plus people by display name or handle.
+- **Sharing** (human-requested): a Share button on the cook detail page opens a sheet with
+  - **Post to Bluesky** (author only): one `app.bsky.feed.post` in the author's repo with the dish name, note (cut with "…" to fit 300 graphemes), a link facet to the cook page, and the cook's photos as an `app.bsky.embed.images` embed reusing the blobs already in the repo (no re-upload). The rkey is a client TID reused on retry. Not indexed.
+  - **Share…**: the native iOS/Android share sheet (`navigator.share`) with the photos as JPEG files and the text "dish, note, link"; without Web Share, an `sms:` link with the text only. Plus **Copy link**.
+- **Public cook page**: `/cook/[did]/[rkey]` is viewable signed out (photos, dish, note, author, counts; no kudos list, comments or profile links), with Open Graph/Twitter tags for link previews, `noindex`, and "Sign in" that returns to the cook (`?next=`, carried through the OAuth `state`).
 
 ### 2.2 Explicitly out of scope
 
-Editing cooks, streaks, heatmaps, any other stats, recipes, ingredients, tags, cooking time, cross-posting to Bluesky, notifications (including web push), search beyond dish names and people (notes, comments, full-text ranking), DMs, video, native mobile apps or app store builds, offline posting, moderation tooling beyond the denylist in §7.
+Editing cooks, streaks, heatmaps, any other stats, recipes, ingredients, tags, cooking time, automatic cross-posting to Bluesky (only the explicit "Post to Bluesky" in §2.1), notifications (including web push), search beyond dish names and people (notes, comments, full-text ranking), DMs, video, native mobile apps or app store builds, offline posting, moderation tooling beyond the denylist in §7.
 
 ---
 
@@ -146,7 +150,7 @@ Profiles are **not** a custom Lexicon. Display names and avatars come from the u
 ## 5. Auth
 
 - Follow the OAuth tutorial's session and client setup. For local development, use the loopback (localhost) client pattern it uses. No domain is needed yet.
-- Scopes: `atproto repo:NS.cook repo:NS.kudos repo:NS.comment repo:NS.follow blob:image/*`, with `NS` expanded.
+- Scopes: `atproto repo:NS.cook repo:NS.kudos repo:NS.comment repo:NS.follow repo:app.bsky.feed.post?action=create blob:image/*`, with `NS` expanded. Sessions from before the feed.post scope was added lack it: "Post to Bluesky" checks the token's scope and asks the user to sign in again (same account) to grant it.
 - Before launch (Phase 7, once there's a real domain), replace the individual `repo:` scopes with a published **permission set** for the namespace so users see a readable consent screen. Don't do this before then.
 - On every successful login, register the user's DID with Tap (`POST /repos/add`). This is required: see §6.1.
 - Sign-in must work from the installed home-screen app, not just the browser. See the OAuth item in §7.1.
