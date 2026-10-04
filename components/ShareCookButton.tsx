@@ -1,7 +1,7 @@
 "use client";
 
 import { TID } from "@atproto/common-web";
-import { Link2, MessageSquareText, Share, X } from "lucide-react";
+import { Link2, Share, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CookImage } from "@/lib/db/schema";
 import { imageUrl } from "@/lib/image/url";
@@ -48,8 +48,9 @@ async function photoFiles(cook: ShareCook, signal: AbortSignal): Promise<File[]>
 }
 
 // Share a cook (header icon → sheet): post it to Bluesky (the author only;
-// the post reuses the photos already in their repo), or send it as a
-// message with the photos through the system share sheet.
+// the post reuses the photos already in their repo), or
+// open the phone's native share sheet (iOS/Android) with the photos, text
+// and link, to send it anywhere.
 export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
   cook: ShareCook;
   canPostToBluesky: boolean;
@@ -129,7 +130,7 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
     }
   }
 
-  async function sendAsMessage() {
+  async function shareNative() {
     setMessageError(null);
     const text = messageText(cook, url);
     const withFiles = Array.isArray(files) && files.length > 0 ? { files, text } : null;
@@ -217,15 +218,15 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
 
           <button
             type="button"
-            onClick={sendAsMessage}
+            onClick={shareNative}
             disabled={!url || files === "loading"}
             className={button({ variant: canPostToBluesky ? "secondary" : "primary", full: true })}
           >
-            <MessageSquareText size={19} strokeWidth={1.9} aria-hidden />
-            {files === "loading" ? "Preparing photos…" : "Send as a message"}
+            <Share size={19} strokeWidth={1.9} aria-hidden />
+            {files === "loading" ? "Preparing photos…" : "Share…"}
           </button>
           {files === "failed" && (
-            <p className="text-small text-muted">The photos couldn&apos;t be prepared; the message will have the text and link only.</p>
+            <p className="text-small text-muted">The photos couldn&apos;t be prepared; only the text and link will be shared.</p>
           )}
 
           <button type="button" onClick={copyLink} disabled={!url} className={button({ variant: "quiet", full: true })}>

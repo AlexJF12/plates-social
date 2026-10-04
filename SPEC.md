@@ -86,7 +86,7 @@ The human you are working with reads and reviews code comfortably. Keep explanat
 - **Search** (Phase 6.6, `/search?q=&meal=`): dish names (case- and accent-insensitive substring) with a meal-type filter, plus people by display name or handle.
 - **Sharing** (human-requested): a Share button on the cook detail page opens a sheet with
   - **Post to Bluesky** (author only): one `app.bsky.feed.post` in the author's repo with the dish name, note (cut with "…" to fit 300 graphemes), a link facet to the cook page, and the cook's photos as an `app.bsky.embed.images` embed reusing the blobs already in the repo (no re-upload). The rkey is a client TID reused on retry. Not indexed.
-  - **Send as a message**: the system share sheet (`navigator.share`) with the photos as JPEG files and the text "dish, note, link"; without Web Share, an `sms:` link with the text only. Plus **Copy link**.
+  - **Share…**: the native iOS/Android share sheet (`navigator.share`) with the photos as JPEG files and the text "dish, note, link"; without Web Share, an `sms:` link with the text only. Plus **Copy link**.
 - **Public cook page**: `/cook/[did]/[rkey]` is viewable signed out (photos, dish, note, author, counts; no kudos list, comments or profile links), with Open Graph/Twitter tags for link previews, `noindex`, and "Sign in" that returns to the cook (`?next=`, carried through the OAuth `state`).
 
 ### 2.2 Explicitly out of scope

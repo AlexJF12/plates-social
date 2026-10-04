@@ -8,7 +8,7 @@ Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `a
 
 - **Share sheet** (`components/ShareCookButton.tsx`): a share icon in the cook detail header (next to delete on your own cooks) opens a `<dialog>` with a preview (first photo, the Bluesky text, photo count) and:
   - **Post to Bluesky** (your own cooks only) → `POST /api/share/bluesky { cook, rkey }`. States: Posting… / error + retry (same TID) / "Posted to Bluesky" + **View on Bluesky** / re-auth.
-  - **Send as a message**: photos are fetched from the image proxy and re-encoded to JPEG **when the sheet opens** (iOS only allows `navigator.share` directly from a tap), then `navigator.share({ files, text })` with "dish\n\nnote\n\nlink" (link in the text: some targets drop `url` when files are attached). No files support → text only; no Web Share → `sms:?&body=`. Cancelling the share sheet is silent.
+  - **Share…** (native iOS/Android share sheet; was "Send as a message"): photos are fetched from the image proxy and re-encoded to JPEG **when the sheet opens** (iOS only allows `navigator.share` directly from a tap), then `navigator.share({ files, text })` with "dish\n\nnote\n\nlink" (link in the text: some targets drop `url` when files are attached). No files support → text only; no Web Share → `sms:?&body=`. Cancelling the share sheet is silent.
   - **Copy link**.
 - **`/api/share/bluesky`** (`lib/social/bluesky.ts`): signed in; the cook must be visible and yours (403 otherwise: the post reuses blobs that are only in the author's repo); checks the OAuth token's scope and returns `403 { reauth: true }` if it lacks `repo:app.bsky.feed.post`; reads the cook record back from your PDS (`client.get(cook)`, for the exact blob refs incl. size) and writes one `app.bsky.feed.post`: text from `blueskyPostText` (`lib/share.ts`: dish, note cut with "…" to fit 300 graphemes, link always whole) with a link facet (UTF-8 byte offsets), `app.bsky.embed.images` with alt (empty string if none) and aspect ratio. TID rkey from the client, reused on retry; an existing record at that rkey counts as done. Not indexed (Tap only delivers `NS.*` + profiles), so §0.14 holds.
 - **Scope**: `repo:app.bsky.feed.post?action=create` added to `SCOPE` (create only). Existing sessions don't have it, so the first "Post to Bluesky" shows "Sign in again", which runs OAuth for the same DID and returns to the cook.
@@ -36,7 +36,7 @@ Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `a
 
 1. `pnpm dev` (+ tunnel, set `PUBLIC_URL`), open one of your cooks, Share → **Post to Bluesky**. Expect "Sign in again" (old session lacks the scope); approve the new permission, you land back on the cook. Share → Post to Bluesky again → "View on Bluesky". Check the post: dish, note, link (tappable), all photos with alt.
 2. `com.atproto.repo.getRecord` for `app.bsky.feed.post/<rkey>`: text, facet byte range covers the URL, embed images reference the same CIDs as the cook.
-3. On the iPhone: Share → **Send as a message** → Messages: photos + text + link. Open the link signed out (private tab): public page, then Sign in returns to the cook.
+3. On the iPhone: Share → **Share…** → Messages (and try another app, e.g. WhatsApp): photos + text + link. Open the link signed out (private tab): public page, then Sign in returns to the cook.
 
 ### Known issues
 
