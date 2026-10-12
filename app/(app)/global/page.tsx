@@ -8,8 +8,9 @@ import { getCookFeed } from "@/lib/db/queries";
 
 // Every cook indexed from the network, newest first (§2.1).
 export default async function GlobalPage() {
-  if (!(await getDid())) redirect("/");
-  const initial = await getCookFeed({});
+  const viewer = await getDid();
+  if (!viewer) redirect("/");
+  const initial = await getCookFeed({ viewer });
 
   return (
     <>
@@ -17,6 +18,7 @@ export default async function GlobalPage() {
       <main className="mx-auto w-full max-w-md">
         <CookFeed
           initial={initial}
+          viewerDid={viewer}
           empty={
             <EmptyState
               title="No cooks yet"

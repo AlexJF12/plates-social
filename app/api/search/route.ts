@@ -10,14 +10,15 @@ export type SearchResult = { people: Author[]; items: CookView[]; cursor: string
 // cursor) without a meal filter also has up to 5 matching people. Signed
 // in only, like every screen that uses it.
 export async function GET(request: NextRequest) {
-  if (!(await getDid())) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const viewer = await getDid();
+  if (!viewer) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const params = request.nextUrl.searchParams;
   const q = normalizeQuery(params.get("q"));
   if (!q) return NextResponse.json({ error: "Query too short" }, { status: 400 });
   const mealType = normalizeMeal(params.get("meal"));
   const cursor = params.get("cursor");
   const [page, people] = await Promise.all([
-    searchCooks({ q, mealType, cursor }),
+    searchCooks({ q, mealType, cursor, viewer }),
     cursor || mealType ? [] : searchPeople(q),
   ]);
   const body: SearchResult = { people, ...page };

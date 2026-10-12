@@ -16,18 +16,21 @@ import { getDid } from "@/lib/auth/session";
 import { APP_NAME } from "@/lib/config";
 import { formatCookedAt } from "@/lib/cook/datetime";
 import { mealTypeLabel } from "@/lib/cook/mealTypes";
-import { type Author, getAccount, getCookDetail, getKudosUri } from "@/lib/db/queries";
+import { type Author, getAccount, getCookDetail } from "@/lib/db/queries";
 import { imageUrl } from "@/lib/image/url";
 import { cookPath, displayName, profilePath } from "@/lib/links";
 
-// One request's worth: generateMetadata and the page both need it.
-const loadCook = cache((did: string, rkey: string) => getCookDetail(decodeURIComponent(did), rkey));
+// One request's worth: generateMetadata and the page both need it. The
+// viewer (or null, signed out) fills cook.viewerKudos.
+const loadCook = cache((did: string, rkey: string, viewer: string | null) =>
+  getCookDetail(decodeURIComponent(did), rkey, undefined, viewer),
+);
 
 // Link previews (Messages, Bluesky, …) for shared cooks: the dish, who
 // cooked it, the note and the first photo. Not for search engines.
 export async function generateMetadata({ params }: PageProps<"/cook/[did]/[rkey]">): Promise<Metadata> {
   const { did, rkey } = await params;
-  const detail = await loadCook(did, rkey);
+  const detail = await loadCook(did, rkey, await getDid());
   if (!detail) return { title: APP_NAME, robots: { index: false } };
   const { cook } = detail;
   const title = `${cook.dishName} · ${displayName(cook.author)}`;
@@ -54,14 +57,15 @@ export async function generateMetadata({ params }: PageProps<"/cook/[did]/[rkey]
 // cook read-only, with a way to sign in and come back here.
 export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]">) {
   const { did, rkey } = await params;
-  const [viewerDid, detail] = await Promise.all([getDid(), loadCook(did, rkey)]);
+  const viewerDid = await getDid();
+  const detail = await loadCook(did, rkey, viewerDid);
   if (!detail) notFound();
   const { cook, kudos, comments } = detail;
 
   if (!viewerDid) return <PublicCook cook={cook} kudosCount={kudos.length} />;
 
   const isMine = cook.author.did === viewerDid;
-  const [kudosUri, account] = await Promise.all([getKudosUri(viewerDid, cook.uri), getAccount(viewerDid)]);
+  const account = await getAccount(viewerDid);
   const viewer = account ?? { did: viewerDid, handle: null, displayName: null, avatarCid: null };
   const share = {
     uri: cook.uri,
@@ -90,7 +94,7 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
         <CookKudos
           cookUri={cook.uri}
           viewer={viewer}
-          initialGiven={Boolean(kudosUri)}
+          initialGiven={cook.viewerKudos}
           initialKudos={kudos}
           canGive={!isMine}
         />

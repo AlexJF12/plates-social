@@ -3,25 +3,32 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CookView, FeedPage } from "@/lib/db/queries";
 import { CookCard } from "./CookCard";
+import { PullToRefresh } from "./PullToRefresh";
 import { button } from "./ui";
 
 // Infinite scroll over /api/feed (§6.2), or another endpoint that pages the
 // same way (`api` + `params`, e.g. /api/search). The first page is rendered
 // on the server (or fetched by the parent) and passed in; later pages load
-// as the sentinel nears the viewport.
+// as the sentinel nears the viewport. Pulling down at the top reloads the
+// first page (PullToRefresh).
 export function CookFeed({
   initial,
+  viewerDid,
   author,
   following = false,
   api = "/api/feed",
   params,
+  refreshable = true,
   empty,
 }: {
   initial: FeedPage;
+  viewerDid: string;
   author?: string;
   following?: boolean;
   api?: string;
   params?: Record<string, string>;
+  // Pull to refresh (feeds and profiles; search results opt out).
+  refreshable?: boolean;
   empty: React.ReactNode;
 }) {
   const [items, setItems] = useState<CookView[]>(initial.items);
@@ -29,19 +36,35 @@ export function CookFeed({
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   const sentinel = useRef<HTMLDivElement>(null);
 
-  const loadMore = useCallback(async () => {
-    if (!cursor || state === "loading") return;
-    setState("loading");
-    try {
+  const fetchPage = useCallback(
+    async (after: string | null): Promise<FeedPage> => {
       const qs = new URLSearchParams({
-        cursor,
+        ...(after ? { cursor: after } : {}),
         ...(author ? { author } : {}),
         ...(following ? { feed: "following" } : {}),
         ...params,
       });
-      const res = await fetch(`${api}?${qs}`);
+      const res = await fetch(`${api}?${qs}`, { cache: "no-store" });
       if (!res.ok) throw new Error(String(res.status));
-      const page: FeedPage = await res.json();
+      return res.json();
+    },
+    [api, params, author, following],
+  );
+
+  // Pull to refresh: the first page again, replacing the list (old items stay
+  // until it arrives); infinite scroll re-arms from the new cursor.
+  const refresh = useCallback(async () => {
+    const page = await fetchPage(null);
+    setItems(page.items);
+    setCursor(page.cursor);
+    setState("idle");
+  }, [fetchPage]);
+
+  const loadMore = useCallback(async () => {
+    if (!cursor || state === "loading") return;
+    setState("loading");
+    try {
+      const page = await fetchPage(cursor);
       // A cook indexed between page loads can shift items; skip repeats.
       setItems((prev) => {
         const seen = new Set(prev.map((c) => c.uri));
@@ -52,7 +75,7 @@ export function CookFeed({
     } catch {
       setState("error");
     }
-  }, [api, params, author, following, cursor, state]);
+  }, [fetchPage, cursor, state]);
 
   useEffect(() => {
     const el = sentinel.current;
@@ -64,12 +87,13 @@ export function CookFeed({
     return () => io.disconnect();
   }, [cursor, state, loadMore]);
 
-  if (items.length === 0) return <>{empty}</>;
+  const Wrap = refreshable ? PullToRefresh : NoRefresh;
+  if (items.length === 0) return <Wrap onRefresh={refresh}>{empty}</Wrap>;
 
   return (
-    <div>
+    <Wrap onRefresh={refresh}>
       {items.map((c) => (
-        <CookCard key={c.uri} cook={c} />
+        <CookCard key={c.uri} cook={c} viewerDid={viewerDid} />
       ))}
       <div ref={sentinel} className="flex min-h-20 items-center justify-center py-6 text-small text-muted">
         {state === "loading" && "Loading…"}
@@ -80,6 +104,8 @@ export function CookFeed({
         )}
         {!cursor && items.length > 3 && "You're all caught up."}
       </div>
-    </div>
+    </Wrap>
   );
 }
+
+const NoRefresh = ({ children }: { onRefresh: () => Promise<void>; children: React.ReactNode }) => <div>{children}</div>;

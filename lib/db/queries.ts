@@ -43,6 +43,8 @@ export type CookView = {
   commentCount: number;
   // Best cook of a completed month (Phase 6.6), or null.
   badge: Badge | null;
+  // The signed-in viewer has given this cook kudos (Phase 6.7).
+  viewerKudos: boolean;
 };
 
 export type FeedPage = { items: CookView[]; cursor: string | null };
@@ -59,7 +61,9 @@ function decodeCursor(cursor: string): { sortAt: Date; uri: string } | null {
 
 const rkeyOf = (uri: string) => uri.slice(uri.lastIndexOf("/") + 1);
 
-function cookQuery(db: Db) {
+// Every cook read goes through here. `viewer` (a DID, or null) fills
+// viewerKudos in the same query: an exists subquery, not a request per card.
+function cookQuery(db: Db, viewer: string | null = null) {
   return db
     .selectFrom("cook")
     .innerJoin("account", "account.did", "cook.authorDid")
@@ -90,6 +94,19 @@ function cookQuery(db: Db) {
         .whereRef("comment.subjectUri", "=", "cook.uri")
         .select(sql<number>`count(*)::int`.as("n"))
         .as("commentCount"),
+      viewer
+        ? eb
+            .exists(
+              eb
+                .selectFrom("kudos")
+                .innerJoin("account as va", "va.did", "kudos.authorDid")
+                .where(visibleAccount("va"))
+                .where("kudos.authorDid", "=", viewer)
+                .whereRef("kudos.subjectUri", "=", "cook.uri")
+                .select(sql`1`.as("one")),
+            )
+            .as("viewerKudos")
+        : sql<boolean>`false`.as("viewerKudos"),
     ]);
 }
 
@@ -108,6 +125,7 @@ const toView = (r: CookRow): CookView => ({
   kudosCount: r.kudosCount ?? 0,
   commentCount: r.commentCount ?? 0,
   badge: null,
+  viewerKudos: Boolean(r.viewerKudos),
 });
 
 // Newest first, PAGE_SIZE at a time, by the (sortAt, uri) cursor, with
@@ -134,11 +152,12 @@ async function cookPage(db: Db, q: ReturnType<typeof cookQuery>, cursor?: string
 export async function getCookFeed(opts: {
   authorDid?: string;
   followedBy?: string;
+  viewer?: string | null;
   cursor?: string | null;
   db?: Db;
 }): Promise<FeedPage> {
   const db = opts.db ?? getDb();
-  let q = cookQuery(db);
+  let q = cookQuery(db, opts.viewer);
   if (opts.authorDid) q = q.where("cook.authorDid", "=", opts.authorDid);
   const me = opts.followedBy;
   if (me) {
@@ -237,9 +256,9 @@ export async function getVisibleCook(uri: string, db: Db = getDb()) {
   );
 }
 
-export async function getCookDetail(did: string, rkey: string, db: Db = getDb()) {
+export async function getCookDetail(did: string, rkey: string, db: Db = getDb(), viewer: string | null = null) {
   const uri = cookUriOf(did, rkey);
-  const row = await cookQuery(db).where("cook.uri", "=", uri).executeTakeFirst();
+  const row = await cookQuery(db, viewer).where("cook.uri", "=", uri).executeTakeFirst();
   if (!row) return null;
 
   const [kudos, comments] = await Promise.all([
@@ -437,11 +456,12 @@ export const containsPattern = (q: string) => `%${q.replace(/[\\%_]/g, "\\$&")}%
 export async function searchCooks(opts: {
   q: string;
   mealType?: string | null;
+  viewer?: string | null;
   cursor?: string | null;
   db?: Db;
 }): Promise<FeedPage> {
   const db = opts.db ?? getDb();
-  let q = cookQuery(db).where(
+  let q = cookQuery(db, opts.viewer).where(
     sql<boolean>`immutable_unaccent(cook."dishName") ilike immutable_unaccent(${containsPattern(opts.q)})`,
   );
   if (opts.mealType) q = q.where("cook.mealType", "=", opts.mealType);

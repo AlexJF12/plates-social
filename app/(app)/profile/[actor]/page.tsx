@@ -24,7 +24,7 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
   if (!account) notFound();
   const isMe = account.did === viewer;
   const [initial, days, followUri, wins] = await Promise.all([
-    getCookFeed({ authorDid: account.did }),
+    getCookFeed({ authorDid: account.did, viewer }),
     getCookDayCounts(account.did, statsWindow()),
     isMe ? null : getFollowUri(viewer, account.did),
     getAuthorBadges(account.did),
@@ -77,6 +77,7 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
         <div className="border-t-8 border-sunken">
           <CookFeed
             initial={initial}
+            viewerDid={viewer}
             author={account.did}
             empty={
               isMe ? (

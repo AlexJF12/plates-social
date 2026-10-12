@@ -66,6 +66,11 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Post-sign-in return paths go through `safeNext` (`lib/links.ts`) everywhere: `/?next=`, the `/oauth/login` body, and the OAuth `state` read back in the callback.
 - `navigator.share` on iOS must run straight from a tap: prepare share files before the tap (the share sheet does it when it opens), never `await` a download inside the click handler.
 - Playwright's bundled browser revision may not match `/opt/pw-browsers` in cloud sessions: use a throwaway config with `launchOptions.executablePath: "/opt/pw-browsers/chromium"` (don't commit it).
+- The signed-in e2e suite creates and removes its own fixtures (`e2e/global-setup.ts`, `e2e/support/fixtures.ts`). New signed-in tests import `test`/`stubWrite` from `e2e/support/signedIn.ts` and must stub every write they trigger (the safety net fails the test otherwise).
+- In Playwright fixtures, name the `use` callback something else (`provide`): the React hooks lint rule flags `use(...)`.
+- A module-level `test.beforeEach` in a shared helper only attaches to the first spec file that imports it; use an `{ auto: true }` fixture instead.
+- Touch gestures in Playwright: `Input.dispatchTouchEvent` through a CDP session (Chromium), as in `e2e/signed-in/feeds.spec.ts`.
+- Kudos toggles go through `useKudosToggle` (shared store): never keep a separate "given" state in a component.
 
 ---
 
