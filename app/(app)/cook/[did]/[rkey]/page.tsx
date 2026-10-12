@@ -10,7 +10,7 @@ import { TimeAgo } from "@/components/TimeAgo";
 import { getDid } from "@/lib/auth/session";
 import { formatCookedAt } from "@/lib/cook/datetime";
 import { mealTypeLabel } from "@/lib/cook/mealTypes";
-import { getAccount, getCookDetail, getKudosUri } from "@/lib/db/queries";
+import { getAccount, getCookDetail } from "@/lib/db/queries";
 import { imageUrl } from "@/lib/image/url";
 import { displayName, profilePath } from "@/lib/links";
 
@@ -20,11 +20,11 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
   const viewerDid = await getDid();
   if (!viewerDid) redirect("/");
   const { did, rkey } = await params;
-  const detail = await getCookDetail(decodeURIComponent(did), rkey);
+  const detail = await getCookDetail(decodeURIComponent(did), rkey, undefined, viewerDid);
   if (!detail) notFound();
   const { cook, kudos, comments } = detail;
   const isMine = cook.author.did === viewerDid;
-  const [kudosUri, account] = await Promise.all([getKudosUri(viewerDid, cook.uri), getAccount(viewerDid)]);
+  const account = await getAccount(viewerDid);
   const viewer = account ?? { did: viewerDid, handle: null, displayName: null, avatarCid: null };
 
   return (
@@ -77,7 +77,7 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
         <CookKudos
           cookUri={cook.uri}
           viewer={viewer}
-          initialGiven={Boolean(kudosUri)}
+          initialGiven={cook.viewerKudos}
           initialKudos={kudos}
           canGive={!isMine}
         />

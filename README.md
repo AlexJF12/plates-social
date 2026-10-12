@@ -108,6 +108,26 @@ pnpm test         # Vitest; the indexer/query tests need Postgres up (they run i
 pnpm test:e2e     # Playwright at 375px; needs pnpm dev running. Screenshots in test-results/
 ```
 
+### e2e: the signed-in suite
+
+`e2e/signed-in/` covers the signed-in screens (feeds, card kudos, pull to refresh, cook page, comments, delete dialogs, log, profile, Best, search, not-found). It needs `pnpm dev` running, the local Postgres (`pnpm db:up`), and `DATABASE_URL` + `SESSION_SECRET` in `.env.local`. Without those it skips (with a message) and the signed-out tests still run.
+
+- **Fixtures:** `e2e/global-setup.ts` inserts local-only rows (`e2e/support/fixtures.ts`): five accounts whose DIDs start with `did:plc:e2e`, 31 cooks, kudos, comments and a follow, every record rkey starting `3mwe2e`. Their photos and avatars are emoji images rendered with Chromium and written into `.cache/img/` under their CIDs. `e2e/global-teardown.ts` deletes all of it, and setup first deletes leftovers from a killed run.
+- **Signing in:** each test mints a session cookie for a fixture DID from `SESSION_SECRET`, in the test process only. Never your own DID.
+- **No writes leave the machine:** every POST/DELETE to `/api/kudos`, `/api/comment`, `/api/cook`, `/api/blob` and `/api/follow` must be stubbed by the test (`stubWrite` in `e2e/support/signedIn.ts`); anything unstubbed is aborted and fails the test.
+- **Cleaning up by hand** (if a run was killed and you won't run the suite again soon):
+  ```sh
+  docker exec -i plates-social-postgres-1 psql -U cooklog -d cooklog <<'SQL'
+  DELETE FROM kudos   WHERE uri LIKE '%/3mwe2e%' OR "authorDid" LIKE 'did:plc:e2e%' OR "subjectUri" LIKE 'at://did:plc:e2e%';
+  DELETE FROM comment WHERE uri LIKE '%/3mwe2e%' OR "authorDid" LIKE 'did:plc:e2e%' OR "subjectUri" LIKE 'at://did:plc:e2e%';
+  DELETE FROM follow  WHERE uri LIKE '%/3mwe2e%' OR "authorDid" LIKE 'did:plc:e2e%' OR "subjectDid" LIKE 'did:plc:e2e%';
+  DELETE FROM cook    WHERE uri LIKE '%/3mwe2e%' OR "authorDid" LIKE 'did:plc:e2e%';
+  DELETE FROM login   WHERE did LIKE 'did:plc:e2e%';
+  DELETE FROM account WHERE did LIKE 'did:plc:e2e%';
+  SQL
+  ```
+  Leftover fixture images in `.cache/img/` are harmless; `rm -rf .cache/img` clears the whole cache (real photos re-fetch on demand).
+
 ## Resetting local data
 
 ```sh

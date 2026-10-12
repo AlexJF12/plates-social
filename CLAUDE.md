@@ -62,6 +62,11 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Search/filter pages that update the URL with `history.replaceState` must initialise from `window.location`, not only props: on Back, Next re-renders from the cached payload of the URL the page was first loaded with.
 - Dish/people search compares `immutable_unaccent(column) ILIKE immutable_unaccent(pattern)` so the trigram indexes (migration 004) apply; build patterns with `containsPattern` (escapes `\ % _`).
 - EXPLAIN on the tiny local index always shows seq scans; to check an index, insert synthetic rows inside `BEGIN … ROLLBACK` and `ANALYZE` first.
+- The signed-in e2e suite creates and removes its own fixtures (`e2e/global-setup.ts`, `e2e/support/fixtures.ts`). New signed-in tests import `test`/`stubWrite` from `e2e/support/signedIn.ts` and must stub every write they trigger (the safety net fails the test otherwise).
+- In Playwright fixtures, name the `use` callback something else (`provide`): the React hooks lint rule flags `use(...)`.
+- A module-level `test.beforeEach` in a shared helper only attaches to the first spec file that imports it; use an `{ auto: true }` fixture instead.
+- Touch gestures in Playwright: `Input.dispatchTouchEvent` through a CDP session (Chromium), as in `e2e/signed-in/feeds.spec.ts`.
+- Kudos toggles go through `useKudosToggle` (shared store): never keep a separate "given" state in a component.
 
 ---
 

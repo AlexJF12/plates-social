@@ -1,6 +1,46 @@
 # Progress
 
-## Current phase: 6.6 — Handle typeahead, best cook, search ✅ approved by the human on the iPhone, PR #10 open (2026-09-30)
+## Current phase: 6.7 — Kudos on feed cards, pull to refresh, signed-in e2e suite ⏳ built; real-write check and iPhone review pending (2026-09-30)
+
+Branch: `feature/phase-6.7` (from main after PR #10; the spec is its first commit). Spec: SPEC §8 Phase 6.7; §7 updated.
+
+### Built
+
+- **`viewerKudos`** on `CookView`: an `exists` subquery in `cookQuery(db, viewer)` (the viewer's kudos, from a visible viewer account), so every page is still one query. `getCookFeed`/`searchCooks` take `viewer`, `getCookDetail(did, rkey, db, viewer)`. `/api/feed` passes the session DID when signed in (still public otherwise, `viewerKudos` false); `/api/search` passes it. The cook page now reads `cook.viewerKudos` instead of a separate `getKudosUri` query.
+- **`useKudosToggle`** (`components/useKudosToggle.ts`): the confirm-then-flip toggle, rkey reuse across retries, errors, moved out of `CookKudos` and shared with the card. Confirmed toggles are kept in a module-level store for the app's life, and `delta` (vs the server's value) adjusts counts and the kudos avatar list. That keeps cards and the cook page in sync, including pages restored from the router cache on Back (which keep their first-render props).
+- **`CardActions`**: the card's counts are now a 44px kudos toggle (accent with a filled hat when on, dimmed while pending, inline error) and a comment link, outside the card's link. Own cooks show a plain count (`role="img"` with a label). `CookCard` takes `viewerDid`; `CookFeed` passes it and every page passes the viewer.
+- **`PullToRefresh`** around `CookFeed` (Following, Global, profiles; search opts out with `refreshable={false}`): window touch listeners (`touchmove` non-passive only to `preventDefault` while pulling), 8px dead zone, sideways swipes and upward scrolls ignored, 0.5 resistance, threshold 64px, max 112, held at 56 while refreshing. `RefreshCw` turns with the pull, accent past the threshold, spins while refreshing (`motion-safe`; "Refreshing…" under reduced motion); `role="status"` announces it. Not while a `dialog[open]` exists. Sets `overscroll-behavior-y: contain` on `<html>` while mounted. `CookFeed.refresh` refetches page 1 (`cache: "no-store"`), replaces the list and re-arms paging; failure keeps the list and shows "Couldn't refresh. Pull down to try again."
+- **Signed-in e2e suite** (`e2e/signed-in/`, 22 tests; helpers in `e2e/support/`): `global-setup` creates fixtures (5 accounts `did:plc:e2e…`, 31 cooks, kudos, comments, a follow; rkeys `3mwe2e…`; emoji photos/avatars rendered with Chromium into `.cache/img`), `global-teardown` removes them (setup also clears leftovers first). `signedIn.ts` extends `test`: cookie minted per test for a fixture DID (option `as`), UTC, no install hint, an auto fixture that skips without fixtures, a `db` pool, and the write safety net (unstubbed POST/DELETE to write routes are aborted and fail the test). `stubWrite` records request bodies. README has an "e2e" section with manual cleanup SQL.
+
+### Decisions not in the spec
+
+- Pull indicator uses `RefreshCw` (turning), not `ArrowDown`: a rotating down-arrow points sideways mid-pull, which read as "back". Both were allowed by the spec.
+- Search results don't get pull to refresh (the spec lists feeds and profiles); `CookFeed` has a `refreshable` prop.
+- The kudos store is per page session (module state), not persisted: a full reload reads the server again, which is correct once Tap has indexed the write.
+- The kudos button keeps both `aria-pressed` and a changing label ("Give kudos, 3 so far" / "Remove your kudos, 3 so far"), as the spec asked.
+- Signed-in tests run with `timezoneId: "UTC"` so the profile stats are deterministic.
+
+### Verified (and how)
+
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: 136/136 (new `lib/db/viewerKudos.test.ts`: own vs others' kudos on feed, detail and search; signed out; denylisted and inactive viewer; a 20-cook page takes the same number of queries as a 1-cook page, counted with a logging Kysely). `pnpm test:e2e`: 39/39 in ~22s, three runs in a row; with Postgres unreachable, 22 skipped with a message and 17 passed. After each run the DB was back to 2 cooks, 1 account, no kudos/comments/follows, and `.cache/img` back to its 12 files.
+- `curl` before the UI: `/api/feed` signed in → `viewerKudos: true` only on the cook the human's DID had kudos on (a temporary local-only row, removed); signed out → all false; `?feed=following` signed out → 401; `/api/search` → true on that cook.
+- Screenshots (375px, light + dark; this session's scratchpad `shots67/`): card off / pending / on / error, pull pulling / armed / refreshing.
+- **Not yet done:** the real end-to-end kudos from a card (needs the human's approval and Tap running): give kudos on a local-only fixture cook from the card, `getRecord` it, confirm Tap delivers it, remove it from the card, confirm it's gone. And the iPhone review.
+
+### Known issues
+
+- Pull to refresh on iOS standalone relies on `overscroll-behavior` (Safari 16+); on older iOS the page may bounce slightly under the indicator.
+- A page restored on Back keeps its first-render list (only kudos state is patched); pull to refresh gets the latest.
+- Carried: dev "N" indicator over the Feed tab; orange placeholder icon (Phase 7).
+
+### Next step
+
+1. Human: approve the real-write check, and start Tap (`pnpm tap`). The agent then runs it and records the result here.
+2. Human, on the iPhone (tunnel, installed app): give and remove kudos from a feed card (there are no other people's cooks in the real index, so this needs local fixture rows; ask the agent to add some), pull to refresh on Following, Global and a profile, and check that a sideways photo swipe doesn't trigger it. Then approve, and ask for the commit and PR.
+
+---
+
+## Phase 6.6 — Handle typeahead, best cook, search ✅ approved by the human on the iPhone (merged, PR #10)
 
 Branch: `feature/phase-6.6` (from main after PR #8/#9). Spec: SPEC §8 Phase 6.6; §2.1, §2.2 and §7 updated to match what was built.
 

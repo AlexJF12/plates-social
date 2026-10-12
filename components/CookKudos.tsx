@@ -2,16 +2,14 @@
 
 import { ChefHat } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState } from "react";
-import { TID } from "@atproto/common-web";
 import type { Author } from "@/lib/db/queries";
 import { displayName, profilePath } from "@/lib/links";
 import { Avatar } from "./Avatar";
+import { useKudosToggle } from "./useKudosToggle";
 import { ErrorText, button } from "./ui";
 
-// Kudos on a cook: the count, who gave them, and the viewer's toggle (§6.6).
-// Like FollowButton, the toggle only flips once the server confirms the
-// write reached the PDS. No toggle on your own cook.
+// Kudos on a cook: the count, who gave them, and the viewer's toggle (§6.6,
+// logic in useKudosToggle). No toggle on your own cook.
 export function CookKudos({
   cookUri,
   viewer,
@@ -25,34 +23,9 @@ export function CookKudos({
   initialKudos: Author[];
   canGive: boolean;
 }) {
-  const [given, setGiven] = useState(initialGiven);
-  const [kudos, setKudos] = useState(initialKudos);
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Reused if giving kudos is retried, so a lost response can't create a
-  // second record (see /api/kudos).
-  const rkey = useRef<string | null>(null);
-
-  async function toggle() {
-    setPending(true);
-    setError(null);
-    try {
-      const res = given
-        ? await fetch("/api/kudos", { method: "DELETE", body: JSON.stringify({ cook: cookUri }) })
-        : await fetch("/api/kudos", {
-            method: "POST",
-            body: JSON.stringify({ cook: cookUri, rkey: (rkey.current ??= TID.nextStr()) }),
-          });
-      if (!res.ok) throw new Error(String(res.status));
-      rkey.current = null;
-      setKudos((prev) => (given ? prev.filter((k) => k.did !== viewer.did) : [...prev, viewer]));
-      setGiven(!given);
-    } catch {
-      setError(given ? "Couldn't remove your kudos. Try again." : "Couldn't give kudos. Try again.");
-    } finally {
-      setPending(false);
-    }
-  }
+  const { given, delta, pending, error, toggle } = useKudosToggle(cookUri, initialGiven);
+  const kudos =
+    delta > 0 ? [...initialKudos, viewer] : delta < 0 ? initialKudos.filter((k) => k.did !== viewer.did) : initialKudos;
 
   const shown = kudos.slice(0, 8);
 
