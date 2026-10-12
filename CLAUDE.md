@@ -62,6 +62,10 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - Search/filter pages that update the URL with `history.replaceState` must initialise from `window.location`, not only props: on Back, Next re-renders from the cached payload of the URL the page was first loaded with.
 - Dish/people search compares `immutable_unaccent(column) ILIKE immutable_unaccent(pattern)` so the trigram indexes (migration 004) apply; build patterns with `containsPattern` (escapes `\ % _`).
 - EXPLAIN on the tiny local index always shows seq scans; to check an index, insert synthetic rows inside `BEGIN … ROLLBACK` and `ANALYZE` first.
+- The cook page lives in its own route group `app/(cook)/` because it's public; its layout shows the tab bar (`AppShell`) only when signed in. Don't move it back under `(app)` (that layout redirects signed-out visitors).
+- Post-sign-in return paths go through `safeNext` (`lib/links.ts`) everywhere: `/?next=`, the `/oauth/login` body, and the OAuth `state` read back in the callback.
+- `navigator.share` on iOS must run straight from a tap: prepare share files before the tap (the share sheet does it when it opens), never `await` a download inside the click handler.
+- Playwright's bundled browser revision may not match `/opt/pw-browsers` in cloud sessions: use a throwaway config with `launchOptions.executablePath: "/opt/pw-browsers/chromium"` (don't commit it).
 - The signed-in e2e suite creates and removes its own fixtures (`e2e/global-setup.ts`, `e2e/support/fixtures.ts`). New signed-in tests import `test`/`stubWrite` from `e2e/support/signedIn.ts` and must stub every write they trigger (the safety net fails the test otherwise).
 - In Playwright fixtures, name the `use` callback something else (`provide`): the React hooks lint rule flags `use(...)`.
 - A module-level `test.beforeEach` in a shared helper only attaches to the first spec file that imports it; use an `{ auto: true }` fixture instead.
@@ -83,7 +87,7 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
    atproto libraries move fast. If this spec's description of a library API conflicts with current docs or source, follow the docs and tell the human.
 3. **Namespace placeholder.** There is no app name or domain yet. All Lexicon IDs use the namespace `com.example.cooklog`, stored in **one** config constant (`NS`). The app display name is also one constant (`APP_NAME = "Cooklog"`). Generated Lexicon code must be imported through a single re-export module (e.g. `lib/lexicons.ts`), so a later rename means regenerating code and editing one file. **Never deploy or publish Lexicons while `NS` starts with `com.example`.** The real namespace is permanent: it gets stamped into every record every user writes.
 4. **Scope discipline.** Build exactly what §2 lists. Do not add features from §2.2, and do not scaffold for them.
-5. **Least privilege.** Request only the granular OAuth scopes in §5. Never request `transition:generic`. Never write to any `app.bsky.*` collection.
+5. **Least privilege.** Request only the granular OAuth scopes in §5. Never request `transition:generic`. Never write to any `app.bsky.*` collection, with one exception approved by the human: creating an `app.bsky.feed.post` when the user taps "Post to Bluesky" on their own cook (§2.1, create only, never edit or delete).
 6. **Treat network records as untrusted input.** Anyone can write any record to their own repo. Validate every indexed record against its Lexicon and enforce every limit in this spec at index time, not only in the UI.
 
 ### Working rules

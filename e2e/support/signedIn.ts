@@ -7,7 +7,7 @@ import { VIEWER, loadEnv, sessionCookie } from "./fixtures";
 // a write route must be stubbed by the test (stubWrite); anything that
 // slips through is aborted and fails the test.
 
-const WRITES = /\/api\/(kudos|comment|cook|blob|follow(\/import)?)(\?.*)?$/;
+const WRITES = /\/api\/(kudos|comment|cook|blob|follow(\/import)?|share\/bluesky)(\?.*)?$/;
 
 type Stubbed = { method: string; path: string; body: unknown };
 
