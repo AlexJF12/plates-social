@@ -1,6 +1,6 @@
 # Progress
 
-## Current: Sharing (human-requested, outside the phase plan) — built, needs the human's live PDS + iPhone check (2026-10-01)
+## Sharing (human-requested, outside the phase plan) — merged (PR #12, 2026-10-12) **without** the live checks below
 
 Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `app.bsky.*` write), §2.1, §2.2, §5 updated.
 
@@ -45,7 +45,15 @@ Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `a
 
 ### Next step
 
-Human: run the verification above, then merge. Phase 7 is still blocked on a domain.
+The human chose to merge before the live checks. **Still unverified in the real world** (do these before relying on it, and before Phase 8 invites):
+1. A real "Post to Bluesky" from your own cook: the post appears on Bluesky with photos and the link; `getRecord` on it matches.
+2. The re-consent: the first "Post to Bluesky" on an old session shows "Sign in again", and OAuth comes back to the cook with the new `app.bsky.feed.post` scope.
+3. The iPhone share sheet (photos + text + link, Messages and one other app).
+4. A shared link opened signed out shows the public page; "Sign in" returns to the cook.
+
+Also carried from Phase 6.7: the real kudos-from-a-card check (getRecord + Tap delivery). The index now has a second real account (`kj2764.bsky.social`) with cooks, so it can be done without fixtures.
+
+Phase 7 is still blocked on a domain.
 
 Merged with main after PR #11 (2026-10-12): the public cook page (`app/(cook)/…`) now takes the viewer and reads `cook.viewerKudos` (Phase 6.7) instead of a separate `getKudosUri` query.
 
