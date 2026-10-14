@@ -1,6 +1,6 @@
 # Progress
 
-## Current: Sharing (human-requested, outside the phase plan) — built, needs the human's live PDS + iPhone check (2026-10-01)
+## Sharing (human-requested, outside the phase plan) — merged (PR #12, 2026-10-12); Bluesky posting verified live, share sheet and signed-out link still to try
 
 Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `app.bsky.*` write), §2.1, §2.2, §5 updated.
 
@@ -45,7 +45,15 @@ Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `a
 
 ### Next step
 
-Human: run the verification above, then merge. Phase 7 is still blocked on a domain.
+The human chose to merge before the live checks. Since then (2026-10-12, iPhone via the tunnel):
+1. ✅ **Re-consent:** signing in again granted the new scope (`repo:app.bsky.feed.post?action=create` in the client metadata; the post wasn't refused for scope).
+2. ✅ **A real "Post to Bluesky":** the human logged a new cook ("Aaaaaaahhhh", `3mxp2gmyahk2v`; `getRecord` on the PDS matches, indexed, and a webhook event arrived from Tap right after), then posted it to Bluesky. `/api/share/bluesky` returned 200, and link-preview crawlers fetched the cook link right after. The human checked the post in the Bluesky app and then deleted it there, so the post itself couldn't be read back with `getRecord` afterwards (its text, facets and image embed are covered by `lib/social/bluesky.test.ts` and `lib/share.test.ts`).
+3. ⏳ **The iPhone share sheet** (photos + text + link to Messages and one other app): not yet tried.
+4. ⏳ **A shared link opened signed out** by a person (crawlers got 200 from the public page; the "Sign in returns to the cook" path hasn't been tried on the phone).
+
+Also carried from Phase 6.7: the real kudos-from-a-card check (getRecord + Tap delivery). The index has a second real account (`kj2764.bsky.social`) with cooks, so it can be done without fixtures.
+
+Phase 7 is still blocked on a domain.
 
 Merged with main after PR #11 (2026-10-12): the public cook page (`app/(cook)/…`) now takes the viewer and reads `cook.viewerKudos` (Phase 6.7) instead of a separate `getKudosUri` query.
 

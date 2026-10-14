@@ -17,7 +17,7 @@ Node 22 is required (`nvm use` picks it up from `.nvmrc`; Node 24 breaks Next.js
 | Regenerate Lexicon code (after editing `lexicons/`) | `pnpm lex:build` |
 | Dev server (http://127.0.0.1:3000) | `pnpm dev` |
 | Tap (needs `go install github.com/bluesky-social/indigo/cmd/tap@latest`) | `pnpm tap` |
-| HTTPS tunnel for phone testing | `cloudflared tunnel --url http://127.0.0.1:3000` (then set `PUBLIC_URL`, restart dev) |
+| HTTPS tunnel for phone testing | `cloudflared tunnel --protocol http2 --url http://127.0.0.1:3000` (then set `PUBLIC_URL`, restart dev; without `--protocol http2` it can stall after its prechecks and never print a URL) |
 | Typecheck / lint | `pnpm typecheck` / `pnpm lint` |
 | Unit tests (Vitest) | `pnpm test` |
 | UI tests at 375px (Playwright; dev server must be running) | `pnpm test:e2e` |
