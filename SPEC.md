@@ -120,7 +120,7 @@ Mental model: users write to their own PDS. Tap watches the network, verifies re
 
 ## 4. Lexicons
 
-Write these as Lexicon JSON files under `lexicons/`, generate types with `lex build`, and validate with the generated `$parse` in the webhook. Keep the descriptions short and clear. **The human will review these at the Phase 1 checkpoint, because records written under them are permanent.** Use `tid` record keys for all four types.
+Write these as Lexicon JSON files under `lexicons/`, generate types with `lex build`, and validate with the generated `$parse` in the webhook. Keep the descriptions short and clear. **The human will review these at the Phase 1 checkpoint, because records written under them are permanent.** Use `tid` record keys for every type.
 
 ### `NS.cook`
 | Field | Type | Rules |
@@ -134,11 +134,26 @@ Write these as Lexicon JSON files under `lexicons/`, generate types with `lex bu
 
 `#image`: `image` (blob, accept `image/jpeg`, `image/webp`, maxSize 1,000,000 bytes), `alt` (string, max 300 graphemes, optional), `aspectRatio` (`{ width, height }` integers, required).
 
+### `NS.visit` (Phase 6.8: eating out)
+A meal eaten at a restaurant, with a review. The same basic post as a cook, but about a place, not something you made.
+
+| Field | Type | Rules |
+|---|---|---|
+| `restaurant` | `#restaurant` | required |
+| `rating` | integer | required, 1–5 (stars) |
+| `review` | string | optional, max 1000 graphemes |
+| `mealType` | string | required, same `knownValues` as `NS.cook` (unknown values show as "Other") |
+| `images` | array of `NS.cook#image` | required, minLength 1, maxLength 4 (same limits as cooks) |
+| `visitedAt` | datetime | required, local time **with its UTC offset**, like `cookedAt` |
+| `createdAt` | datetime | required |
+
+`#restaurant`: `name` (string, required, 1–100 graphemes), `area` (string, optional, max 100 graphemes: a neighbourhood or city, e.g. "Brooklyn"). Free text: there's no place ID, so two people's reviews of the same restaurant aren't linked.
+
 ### `NS.kudos`
-`subject` (`com.atproto.repo.strongRef`, required), `createdAt` (required).
+`subject` (`com.atproto.repo.strongRef` to a cook or a visit, required), `createdAt` (required).
 
 ### `NS.comment`
-`subject` (`com.atproto.repo.strongRef` to a cook, required), `text` (1–500 graphemes, required), `createdAt` (required).
+`subject` (`com.atproto.repo.strongRef` to a cook or a visit, required), `text` (1–500 graphemes, required), `createdAt` (required).
 
 ### `NS.follow`
 `subject` (DID string, required), `createdAt` (required).
@@ -339,6 +354,73 @@ Each phase ends with a **checkpoint** (§0.1) and a `PROGRESS.md` handoff (§0.8
 *Tests:* unit tests against the local Postgres for `viewerKudos` (true only for the viewer's own kudos; false for someone else's, for a signed-out viewer and for a kudos by a hidden viewer account) and a check that it doesn't add a query per card. The e2e suite above.
 
 *Checkpoint (one, at the end):* screenshots of the card toggle states (off, pending, on, error) and the pull indicator (pulling, past threshold, refreshing) in light and dark at 375px; the suite's run time and results; test, typecheck and lint results. The end-to-end check for one real kudos from a card: with the human's approval, give kudos on a local-only fixture cook from the feed card, read the record back with `getRecord`, confirm it arrives through Tap, then remove it from the card and confirm it's gone from the PDS. *Done when:* the human has tried card kudos and pull to refresh in the installed PWA on a real iPhone (via the tunnel) and approved them.
+
+**Phase 6.8 — Eating out (restaurant visits with reviews).** Start on a new branch after the Phase 6.7 and Sharing PRs are merged. This phase adds a feature on purpose: a second kind of post, **a visit**, for a meal eaten at a restaurant, with a star rating and a review. It's the same basic post as a cook (photos, meal type, when), shown in the same feeds but on a **visibly different card**. It adds one Lexicon (`NS.visit`, §4) and one index table. Everything new is a copy of PDS records, so §0.14 (the index stays rebuildable) holds. When the phase is done, update §2.1, §2.2, §5, §6 and §7 to match what was built.
+
+Decided with the human (2026-10-12): a **mixed feed with distinct cards** (not a separate feed or tab); restaurants are **free text** (name + optional area, no places service); the review is a **1–5 star rating plus optional written text**. Defaults the human may still change at the first checkpoint: photos required (1–4, like cooks); the record is named `visit`; the second accent is a warm terracotta.
+
+**Not in this phase:** restaurant pages or linking reviews of the same place, a places/maps lookup, price level, dishes ordered, restaurant stats or a "Best restaurant", and text-only reviews.
+
+1. **Lexicon and schema (checkpoint A).**
+   - Write `lexicons/com/example/cooklog/visit.json` per §4 (reuse `NS.cook#image`), and update the `kudos` and `comment` descriptions to say "a cook or a visit" (descriptions only; the schemas don't change). `pnpm lex:build`, import only via `lib/lexicons.ts`, add `COLLECTIONS.visit`.
+   - Migration `005_visit` (additive): a `visit` table mirroring `cook` (`uri` PK, `cid`, `authorDid`, `restaurantName`, `restaurantArea`, `rating` smallint, `review`, `mealType`, `images` jsonb, `visitedAt` text, `visitedAtUtc`, `visitedLocalDate` date, `createdAt`, `indexedAt`, `sortAt` = min(createdAt, indexedAt), all `timestamptz`). Indexes as for `cook`: `(sortAt desc, uri desc)`, `(authorDid, sortAt desc, uri desc)`, plus a `pg_trgm` GIN on `immutable_unaccent("restaurantName" || ' ' || coalesce("restaurantArea", ''))` for search.
+   - Unit tests: valid and invalid visit records through `jsonToLex` + `$parse` (rating 0 and 6, an empty name, 5 images, a PNG, a `visitedAt` without an offset).
+   - *Checkpoint A:* stop and show the human the Lexicon JSON (records under it are permanent once the namespace is real) and the migration. Wait for approval before building on it.
+2. **Indexing and sync.**
+   - `lib/indexer/visit.ts`: validate, enforce every limit, upsert idempotently (single statement, like cooks), delete. `ensureAccount` first.
+   - Kudos and comments: widen the subject check from "is a cook" to "is a cook or a visit" (collection of the subject's at-uri). Orphan rules (§6.2) apply to both.
+   - Tap: `NS.*` is already in `--collection-filters`, so visits are delivered. But `--signal-collection` is `NS.cook` only, so an account that has only posted visits isn't discovered. Check the current Tap docs for more than one signal collection; if it can't, document the gap and propose a fix to the human.
+   - Rebuild (§0.14): include `visit` in the index-wipe and rebuild script, and update the README procedure. Test a rebuild with a visit in the repo.
+   - Image proxy (`isReferenced`): also accept CIDs referenced by a visible visit.
+3. **Auth.** Add `repo:NS.visit` to `SCOPE`. Existing sessions lack it: posting or deleting a visit checks the token's scope and, if it's missing, shows "Sign in again" (the same pattern as Post to Bluesky). Everything else keeps working on an old session.
+4. **Write routes** (exercise each with curl before building UI on it, §0.9):
+   - `POST /api/visit`: create with a client TID rkey reused on retry (like `/api/cook`), validate with `$parse`, read-your-own-writes upsert. Photos use the existing `/api/blob` upload.
+   - `DELETE /api/visit`: delete your own visit (confirm first in the UI, §6.6); a missing record is a success, so it can be retried.
+   - `/api/kudos` and `/api/comment`: accept a visit as the subject (`getVisibleCook` becomes a cook-or-visit lookup).
+   - Post to Bluesky: also for your own visits. Text: restaurant name and area, the stars as "★★★★☆", then the review cut with "…" to fit 300 graphemes, and a link facet to the visit page; photos reused as for cooks.
+5. **Reads: one feed of cooks and visits.**
+   - A `FeedItem` union (`{ kind: "cook" } & CookView` or `{ kind: "visit" } & VisitView`, with kudos/comment counts, `viewerKudos` and, for cooks, `badge`). Following, Global and profile feeds return both, newest first, with the existing `(sortAt, uri)` cursor across both tables (a `UNION ALL` of the two filtered selects, ordered and limited once). A page must stay a fixed number of queries, never one per card: a unit test counts them, as in Phase 6.7.
+   - `getVisitDetail`, like `getCookDetail` (kudos list, comments, `viewerKudos`).
+   - Every read goes through `visibleAccount`. `/api/feed` returns the union.
+   - **Kept as cooks only:** profile stats ("cooks this week/month"), Best cook and its badges. Their queries don't change.
+6. **Design.** Add a second accent pair to the tokens in `app/globals.css`: `out` (terracotta, for the eating-out label and stars) and `out-soft`, light and dark, each text pair checked for WCAG AA against `background` and `surface` before use. Start around `#a8471f` light and `#e8916d` dark, adjusting until they pass. Basil stays the only colour for interactive elements and active kudos (§7). Icon: `UtensilsCrossed` (lucide).
+7. **The visit card** (in every feed, next to cook cards):
+   - The same author row (meal type and time).
+   - Above the photos or the name, an "Ate out" label: `UtensilsCrossed` plus text in `out`, on `out-soft`, `rounded-full`, small.
+   - The photos, the same carousel and crop as cooks.
+   - The restaurant name in the display serif where the dish name goes, with the area in `muted` under it.
+   - The stars: five `Star` icons, filled to the rating in `out`, with `aria-label="4 out of 5 stars"`.
+   - The review cut to 3 lines, then the same `CardActions` (kudos toggle, comments).
+
+   It must be obvious at a glance which cards are visits, in light and dark, without reading the label.
+8. **The visit page** (`/visit/[did]/[rkey]`): public like the cook page (same route group and signed-out treatment, link-preview tags, `noindex`). All photos at full aspect ratio, the restaurant and area, the stars, "Visited …" (in the author's offset, like "Cooked …"), the full review, kudos, comments, Share (Post to Bluesky for the author, the native share sheet, copy link) and delete for the author. Not-found and loading states like the cook page.
+9. **Logging a visit.**
+   - The Log screen gets a two-segment switch at the top: **Cooked it | Ate out** (default Cooked it, remembered for the session). Switching keeps the photos, meal type and date.
+   - "Ate out" swaps the dish name and note for: restaurant name (required), area (optional), the star rating (required: a `radiogroup` of five 44px star buttons with arrow-key support, labelled "1 star" … "5 stars"), and the review (optional, with a character count near the limit).
+   - Submit shows upload progress and keeps the form on failure, exactly as for cooks. On success, open the new visit.
+10. **Search.** Restaurant names and areas match like dish names (case- and accent-insensitive substring, the new trigram index). Results are one mixed list, newest first, with the same cursor; the meal chips filter both kinds; people stay as they are.
+11. **Profile.** The feed shows the person's cooks and visits. The stats stay cook counts, labelled as now.
+
+*Tests:*
+- **Unit, against the local Postgres:** the visit indexer (valid, invalid, update, delete, replay is a no-op); kudos and comments on visits, including orphans; the feed union (paging across both kinds with ties on `sortAt`, Following, Global and profile, the denylist, a fixed query count); `viewerKudos` on visits; search across both kinds; stats and Best still ignoring visits; the proxy accepting visit images; a rebuild including visits.
+- **e2e:** extend the fixtures with visits (a winning-looking visit must not appear on the Best tab). Cover: visit cards in feeds, giving kudos on a visit card, the visit page (signed in and signed out), logging a visit (validation, the star control with keyboard, a failure then retry, stubbed writes), deleting a visit, search finding a restaurant, and the "Sign in again" path when the scope is missing. Every existing test keeps passing. Add the visit write routes to the safety net.
+
+*Checkpoint B (the end of the phase):*
+- Screenshots at 375px, light and dark: a feed mixing cards, a visit card, the visit page (signed in and out), the Log form in both modes, and search.
+- The AA results for the new tokens.
+- Test, typecheck and lint results.
+- The end-to-end check (§0.9), with the human's approval: post a real visit from the app, read it back with `getRecord` and check every field, confirm it arrives in Postgres through Tap (delete the row and re-add the repo, as in CLAUDE.md), give kudos on it from another account if one is available, then delete it and confirm it's gone from the PDS and the index.
+
+*Done when:* the human has logged a visit, seen it in the feed next to cooks, and opened it, in the installed PWA on a real iPhone (via the tunnel), and approved.
+
+**Build order for the session that does this** (one phase per session, §0.8; if the session runs long, stop at a stable step and write the handoff):
+1. Read `CLAUDE.md`, `PROGRESS.md` and this phase. Check that the dev server, Postgres and Tap are running, and the tunnel if phone testing is planned. Branch `feature/phase-6.8` from main.
+2. Step 1 (Lexicon, migration, parse tests), then **stop at checkpoint A**.
+3. After approval: steps 2–3 (indexer, subjects, Tap, rebuild, proxy, scope) with their unit tests.
+4. Step 4 (write routes), exercised with curl and one real `getRecord` round trip, with approval for the real write.
+5. Step 5 (the feed union and visit detail) with the query-count and paging tests. This is the riskiest change: every feed goes through it.
+6. Steps 6–8 (tokens, card, visit page), with screenshots. Then step 9 (Log), then steps 10–11.
+7. Extend the e2e fixtures and suite, update SPEC §2/§5/§6/§7, `PROGRESS.md` and `CLAUDE.md`, and stop at checkpoint B.
 
 **Phase 7 — Deployment prep (blocked until the human provides a domain).** Ask the human for the domain. Swap `NS` and `APP_NAME`, regenerate code, and reset the dev database. Publish the Lexicons and a permission set under the real namespace, following current atproto docs. Replace the placeholder icons, and add production OAuth client metadata, Fly configs for both machines (with the Tap volume), the Neon connection and secrets. Also:
 - set health checks with a startup grace period generous enough that slow boots don't fail deploys;

@@ -53,6 +53,8 @@ The human chose to merge before the live checks. Since then (2026-10-12, iPhone 
 
 Also carried from Phase 6.7: the real kudos-from-a-card check (getRecord + Tap delivery). The index has a second real account (`kj2764.bsky.social`) with cooks, so it can be done without fixtures.
 
+**Next phase: 6.8 — Eating out** (restaurant visits with a star rating and review, in the same feeds on a distinct card). It's specified in SPEC §8 "Phase 6.8", with the decisions made with the human and a build order. Start it in a fresh session: "Read CLAUDE.md, PROGRESS.md and SPEC §8 Phase 6.8, then build it, stopping at checkpoint A."
+
 Phase 7 is still blocked on a domain.
 
 Merged with main after PR #11 (2026-10-12): the public cook page (`app/(cook)/…`) now takes the viewer and reads `cook.viewerKudos` (Phase 6.7) instead of a separate `getKudosUri` query.
