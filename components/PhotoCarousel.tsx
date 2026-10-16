@@ -1,13 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { type ReactNode, useRef, useState } from "react";
 import type { CookImage } from "@/lib/db/schema";
 import { imageUrl } from "@/lib/image/url";
 
 // Feed photos (§7): edge to edge, swipeable with dots when there's more than
 // one. Every slide takes the first photo's shape, cropped to at most 4:5
-// (portrait) so one tall photo can't take over the feed.
-export function PhotoCarousel({ did, images }: { did: string; images: CookImage[] }) {
+// (portrait) so one tall photo can't take over the feed. `badge` sits in the
+// top-left corner over every slide (a visit's rating).
+export function PhotoCarousel({ did, images, badge }: { did: string; images: CookImage[]; badge?: ReactNode }) {
   const scroller = useRef<HTMLDivElement>(null);
   const [index, setIndex] = useState(0);
   const first = images[0].aspectRatio;
@@ -36,6 +37,7 @@ export function PhotoCarousel({ did, images }: { did: string; images: CookImage[
           />
         ))}
       </div>
+      {badge && <div className="pointer-events-none absolute top-3 left-3">{badge}</div>}
       {images.length > 1 && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center" aria-hidden>
           <div className="flex gap-1.5 rounded-full bg-black/35 px-2 py-1.5 backdrop-blur-sm">

@@ -1,6 +1,6 @@
 # Progress
 
-## Phase 6.8 — Eating out (restaurant visits with reviews) — PR opened at checkpoint B (2026-10-16); live PDS/Tap checks and the iPhone review still pending (the human will run them on the laptop)
+## Phase 6.8 — Eating out (restaurant visits with reviews) — PR #16 open; live PDS/Tap checks passed 2026-10-16
 
 Branch: `feature/phase-6.8` (from main after PR #15). Checkpoint A (Lexicon + migration) approved by the human 2026-10-16. Spec: §2.1, §2.2, §4, §5, §6, §7 updated.
 
@@ -53,7 +53,9 @@ Stars are graphics (3:1 needed); the label text is ≥ 4.5 everywhere it sits.
 - `curl` on the dev server: `POST`/`DELETE /api/visit` signed out → 401; `/api/kudos` with a visit uri → 401.
 - `EXPLAIN` with 20k cooks + 10k visits inside `BEGIN … ROLLBACK`: global page = `Merge Append` of `cook_sort_idx` and `visit_sort_idx` index scans (no full sort); profile = index-only scans on both `*_author_sort_idx`; search = bitmap scans on `cook_dish_trgm_idx` and `visit_restaurant_trgm_idx`.
 - Screenshots at 375px, light and dark (feed mixing cards, visit card, visit page signed in/out, share sheet, Log in both modes, search, profile): looked at each; contact sheets were in the cloud session's scratchpad (not in the repo).
-- **Not verified (no PDS/Bluesky/plc network in the cloud session):** a real visit written to a PDS and read back with `getRecord`, its delivery through Tap, a real rebuild with a visit in a repo, the OAuth re-consent for `repo:NS.visit`, and the iPhone review.
+- **Live on the laptop (2026-10-16, iPhone via the tunnel):** `pnpm migrate` applied `005_visit`. A fresh sign-in (new tunnel = new client_id) granted `repo:NS.visit`; the client metadata lists it. The human posted a visit from the iPhone (`3mxzkvkjils2u`: Sammy, Beacon, 4★, "Yummmmmm", snack, one 1500×2000 JPEG): `POST /api/visit` 200; `getRecord` on the PDS has every field (`visitedAt` `17:54:00-04:00`) and the index row matches (same cid, `visitedLocalDate` 2026-10-16). **Through Tap:** deleted the row, `/repos/remove` + `/repos/add` → back in 2 s, same cid and `sortAt`. Deleted from the visit page on the iPhone: `DELETE /api/visit` 200, `getRecord` → `RecordNotFound`, `listRecords` empty, 0 rows in `visit`. `pnpm rebuild-index` dry run lists `visit` among the counts.
+- **After the iPhone review (2026-10-16):** the human found visit cards too close to cook cards (only the pill differed at a glance). Added, as they chose: a `MapPin` before the area (`RestaurantArea`, card and page) and the rating as a terracotta pill over the card's photo (`RatingBadge`, top-left, `aria-hidden`). `pnpm typecheck`/`lint` clean; `e2e/signed-in/visits.spec.ts` 13/13 locally, now also asserting the badge; screenshots at 375px light and dark looked at (card and page).
+- **Still not verified live:** the "Sign in again" prompt for a session that predates `repo:NS.visit` (the fresh sign-in skipped it; covered by e2e), and a real rebuild with a visit in a repo (the visit was deleted before it).
 
 ### Human verification (checkpoint B)
 
@@ -72,7 +74,7 @@ Stars are graphics (3:1 needed); the label text is ≥ 4.5 everywhere it sits.
 
 ### Next step
 
-The human chose to open the PR before the live checks (as with Sharing) and will run the checkpoint B checks above from the laptop, then review on the iPhone via the tunnel. Until then, the real write, `getRecord`, Tap delivery, the `repo:NS.visit` re-consent and a real rebuild with a visit are unverified. Phase 7 stays blocked on the domain and the new name.
+The live checkpoint B checks passed (see Verified). Remaining: the human's merge of PR #16, and two open questions (visit-only accounts not auto-discovered by Tap; whether import candidates should include visit-only accounts). Phase 7 stays blocked on the domain and the new name.
 
 ## Sharing (human-requested, outside the phase plan) — merged (PR #12, 2026-10-12); Bluesky posting verified live, share sheet and signed-out link still to try
 

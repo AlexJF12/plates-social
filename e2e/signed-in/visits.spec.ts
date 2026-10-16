@@ -16,6 +16,9 @@ test("visit cards sit in the feeds next to cooks, with a date and never a time",
   await expect(lilia).toBeVisible();
   await expect(lilia.getByTestId("ate-out")).toHaveText("Ate out");
   await expect(lilia.getByRole("img", { name: "5 out of 5 stars" })).toBeVisible();
+  // The rating also sits over the photo, hidden from screen readers (the stars carry it).
+  await expect(lilia.getByTestId("rating-badge")).toHaveText("5");
+  await expect(lilia.getByTestId("rating-badge")).toHaveAttribute("aria-hidden", "true");
   await expect(lilia).toContainText("Williamsburg, Brooklyn");
   await expect(lilia.locator("header time")).toHaveText("Mon 16 Jun 2025");
   expect(await lilia.locator("header").innerText()).not.toMatch(TIME);

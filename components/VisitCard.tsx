@@ -6,13 +6,15 @@ import { AteOutLabel } from "./AteOutLabel";
 import { Avatar } from "./Avatar";
 import { CardActions } from "./CardActions";
 import { PhotoCarousel } from "./PhotoCarousel";
-import { Stars } from "./Stars";
+import { RestaurantArea } from "./RestaurantArea";
+import { RatingBadge, Stars } from "./Stars";
 import { VisitDate } from "./VisitDate";
 
 // One visit in a feed (Phase 6.8), next to cook cards: the same author row
 // but with the visit's date (never a time), the "Ate out" label, photos as
-// on a cook card, the restaurant in the display serif with its area, the
-// stars, the review (3 lines), then the same kudos and comment counts.
+// on a cook card with the rating over them, the restaurant in the display
+// serif with its area (pinned), the stars, the review (3 lines), then the
+// same kudos and comment counts.
 export function VisitCard({ visit, viewerDid }: { visit: VisitView; viewerDid: string }) {
   const href = visitPath(visit.author.did, visit.rkey);
   return (
@@ -33,10 +35,10 @@ export function VisitCard({ visit, viewerDid }: { visit: VisitView; viewerDid: s
         </div>
         <AteOutLabel />
       </header>
-      <PhotoCarousel did={visit.author.did} images={visit.images} />
+      <PhotoCarousel did={visit.author.did} images={visit.images} badge={<RatingBadge rating={visit.rating} />} />
       <Link href={href} className="block px-4 pt-4 active:opacity-80">
         <h2 className="font-display text-dish text-balance break-words">{visit.restaurantName}</h2>
-        {visit.restaurantArea && <p className="text-small text-muted break-words">{visit.restaurantArea}</p>}
+        {visit.restaurantArea && <RestaurantArea area={visit.restaurantArea} className="text-small" />}
         <div className="mt-2">
           <Stars rating={visit.rating} />
         </div>

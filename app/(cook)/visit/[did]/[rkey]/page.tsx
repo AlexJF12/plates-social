@@ -10,6 +10,7 @@ import { DeletePostButton } from "@/components/DeletePostButton";
 import { PageHeader } from "@/components/PageHeader";
 import { AuthorLink, FullPhotos } from "@/components/PostParts";
 import { SharePostButton } from "@/components/SharePostButton";
+import { RestaurantArea } from "@/components/RestaurantArea";
 import { Stars } from "@/components/Stars";
 import { button } from "@/components/ui";
 import { PUBLIC_URL } from "@/lib/auth/client";
@@ -154,7 +155,7 @@ function VisitBody({ visit, linkAuthor }: { visit: VisitView; linkAuthor: boolea
 
       <section className="px-4 pt-5 pb-6">
         <h2 className="font-display text-title text-balance break-words">{visit.restaurantName}</h2>
-        {visit.restaurantArea && <p className="mt-0.5 text-body text-muted break-words">{visit.restaurantArea}</p>}
+        {visit.restaurantArea && <RestaurantArea area={visit.restaurantArea} className="mt-0.5 text-body" />}
         <div className="mt-3">
           <Stars rating={visit.rating} size={22} />
         </div>

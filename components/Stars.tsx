@@ -18,3 +18,18 @@ export function Stars({ rating, size = 18 }: { rating: number; size?: number }) 
     </span>
   );
 }
+
+// The rating as a small pill over a visit card's photo, so a visit stands out
+// while scrolling. Decorative: the stars under the name carry the label.
+export function RatingBadge({ rating }: { rating: number }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-full bg-out-soft px-2.5 py-1 text-small font-semibold text-out shadow-sm"
+      aria-hidden
+      data-testid="rating-badge"
+    >
+      <Star size={14} strokeWidth={1.8} fill="currentColor" />
+      {rating}
+    </span>
+  );
+}
