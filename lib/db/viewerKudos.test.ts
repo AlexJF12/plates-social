@@ -3,7 +3,7 @@ import { Pool } from "pg";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { COLLECTIONS } from "../config";
 import { getDb } from ".";
-import { PAGE_SIZE, getCookDetail, getCookFeed, searchCooks } from "./queries";
+import { PAGE_SIZE, getCookDetail, getFeed, searchPosts } from "./queries";
 import type { DatabaseSchema } from "./schema";
 import { inRollback } from "./testing";
 
@@ -54,7 +54,7 @@ const kudos = (db: Db, author: string, i: number) =>
     .execute();
 
 const flags = async (db: Db, viewer: string | null) =>
-  (await getCookFeed({ authorDid: A, viewer, db })).items.map((c) => [c.dishName, c.viewerKudos]);
+  (await getFeed({ authorDid: A, viewer, db })).items.map((c) => [c.kind === "cook" ? c.dishName : c.restaurantName, c.viewerKudos]);
 
 describe("viewerKudos", () => {
   it("is true only for the viewer's own kudos, on feeds, detail and search", async () => {
@@ -77,7 +77,7 @@ describe("viewerKudos", () => {
       ]);
       expect((await getCookDetail(A, rkey(0), db, B))?.cook.viewerKudos).toBe(true);
       expect((await getCookDetail(A, rkey(0), db, C))?.cook.viewerKudos).toBe(false);
-      expect((await searchCooks({ q: "zqvk dish 0", viewer: B, db })).items.map((c) => c.viewerKudos)).toEqual([true]);
+      expect((await searchPosts({ q: "zqvk dish 0", viewer: B, db })).items.map((c) => c.viewerKudos)).toEqual([true]);
     });
   });
 
@@ -109,7 +109,7 @@ describe("viewerKudos", () => {
         .execute(async (trx) => {
           await seed(trx, 1);
           count = 0;
-          await getCookFeed({ authorDid: A, viewer: B, db: trx });
+          await getFeed({ authorDid: A, viewer: B, db: trx });
           const one = count;
 
           for (let i = 1; i <= PAGE_SIZE + 5; i++) {
@@ -133,7 +133,7 @@ describe("viewerKudos", () => {
             await kudos(trx, B, i);
           }
           count = 0;
-          const page = await getCookFeed({ authorDid: A, viewer: B, db: trx });
+          const page = await getFeed({ authorDid: A, viewer: B, db: trx });
           expect(page.items).toHaveLength(PAGE_SIZE);
           expect(page.items.every((c) => c.viewerKudos)).toBe(true);
           expect(count).toBe(one);

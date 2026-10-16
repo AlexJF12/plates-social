@@ -54,3 +54,24 @@ export function formatCookedAt(cookedAt: string): string {
     minute: "2-digit",
   });
 }
+
+// A visit's date (Phase 6.8), never a time: "Today", "Yesterday" (when the
+// viewer's `today` is known), else "Tue 14 Oct", with the year when it isn't
+// this year. `date` is visitedLocalDate ('YYYY-MM-DD', the author's offset).
+export function formatVisitDate(date: string, today?: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!m) return date;
+  if (today) {
+    if (date === today) return "Today";
+    const t = Date.parse(`${today}T00:00:00Z`);
+    if (date === new Date(t - 86_400_000).toISOString().slice(0, 10)) return "Yesterday";
+  }
+  const [, y, mo, d] = m.map(Number);
+  const at = new Date(Date.UTC(y, mo - 1, d));
+  const part = (o: Intl.DateTimeFormatOptions) => at.toLocaleDateString("en-GB", { timeZone: "UTC", ...o });
+  const thisYear = (today ?? new Date().toISOString()).slice(0, 4);
+  return `${part({ weekday: "short" })} ${d} ${part({ month: "short" })}${String(y) === thisYear ? "" : ` ${y}`}`;
+}
+
+// The viewer's own calendar date, 'YYYY-MM-DD' (browser only).
+export const localToday = () => toLocalDatetimeWithOffset(new Date()).slice(0, 10);

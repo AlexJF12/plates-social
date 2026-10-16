@@ -3,7 +3,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { latestStartedMonth } from "../cook/best";
 import { COLLECTIONS } from "../config";
 import { getDb } from ".";
-import { getAuthorBadges, getBestCooks, getBestOfMonth, getCookDetail, getCookFeed } from "./queries";
+import { getAuthorBadges, getBestCooks, getBestOfMonth, getCookDetail, getFeed } from "./queries";
 import type { DatabaseSchema } from "./schema";
 import { inRollback } from "./testing";
 
@@ -191,9 +191,10 @@ describe("badges", () => {
       await kudos(db, past, B);
       await kudos(db, current, B);
 
-      const feed = (await getCookFeed({ authorDid: A, db })).items;
-      expect(feed.find((c) => c.uri === past)?.badge).toEqual({ mealType: "dinner", month: "2020-03" });
-      expect(feed.find((c) => c.uri === current)?.badge).toBeNull();
+      const feed = (await getFeed({ authorDid: A, db })).items;
+      const badge = (uri: string) => feed.flatMap((c) => (c.kind === "cook" && c.uri === uri ? [c.badge] : []))[0];
+      expect(badge(past)).toEqual({ mealType: "dinner", month: "2020-03" });
+      expect(badge(current)).toBeNull();
       const detail = await getCookDetail(A, past.split("/").pop()!, db);
       expect(detail?.cook.badge).toEqual({ mealType: "dinner", month: "2020-03" });
 

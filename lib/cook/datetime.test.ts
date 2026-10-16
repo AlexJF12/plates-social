@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   datetimeLocalInputToCookedAt,
   formatCookedAt,
+  formatVisitDate,
   localDateOf,
   toDatetimeLocalInput,
   toLocalDatetimeWithOffset,
@@ -92,5 +93,30 @@ describe("formatCookedAt", () => {
 
   it("falls back to the raw string if it can't parse it", () => {
     expect(formatCookedAt("whenever")).toBe("whenever");
+  });
+});
+
+describe("formatVisitDate", () => {
+  it("is Today or Yesterday in the viewer's calendar", () => {
+    expect(formatVisitDate("2026-10-16", "2026-10-16")).toBe("Today");
+    expect(formatVisitDate("2026-10-15", "2026-10-16")).toBe("Yesterday");
+    expect(formatVisitDate("2026-02-28", "2026-03-01")).toBe("Yesterday");
+    expect(formatVisitDate("2025-12-31", "2026-01-01")).toBe("Yesterday");
+  });
+
+  it("is the weekday, day and month otherwise, with the year only when it's not this year", () => {
+    expect(formatVisitDate("2026-10-14", "2026-10-16")).toBe("Wed 14 Oct");
+    expect(formatVisitDate("2026-10-17", "2026-10-16")).toBe("Sat 17 Oct");
+    expect(formatVisitDate("2025-06-03", "2026-10-16")).toBe("Tue 3 Jun 2025");
+  });
+
+  it("without a viewer's today (server render) it's never Today or Yesterday", () => {
+    const today = new Date().toISOString().slice(0, 10);
+    expect(formatVisitDate(today)).not.toBe("Today");
+    expect(formatVisitDate(today)).toMatch(/^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2}/);
+  });
+
+  it("never shows a time", () => {
+    expect(formatVisitDate("2026-10-14", "2026-10-16")).not.toMatch(/\d:\d/);
   });
 });

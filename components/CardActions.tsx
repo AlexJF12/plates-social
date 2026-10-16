@@ -2,7 +2,7 @@
 
 import { ChefHat, MessageCircle } from "lucide-react";
 import Link from "next/link";
-import type { CookView } from "@/lib/db/queries";
+import type { FeedItem } from "@/lib/db/queries";
 import { useKudosToggle } from "./useKudosToggle";
 import { ErrorText } from "./ui";
 
@@ -11,9 +11,13 @@ const iconTarget =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
 
 // The counts under a feed card (Phase 6.7): the kudos toggle (a plain count
-// on your own cook) and the comment count, which opens the cook. Outside
-// the card's link, so no control sits inside another.
-export function CardActions({ cook, href, canGive }: { cook: CookView; href: string; canGive: boolean }) {
+// on your own post) and the comment count, which opens the cook or visit.
+// Outside the card's link, so no control sits inside another.
+export function CardActions({ cook, href, canGive }: {
+  cook: Pick<FeedItem, "uri" | "kudosCount" | "commentCount" | "viewerKudos">;
+  href: string;
+  canGive: boolean;
+}) {
   const { given, delta, pending, error, toggle } = useKudosToggle(cook.uri, cook.viewerKudos);
   const kudos = cook.kudosCount + delta;
   const comments = cook.commentCount;

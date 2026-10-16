@@ -4,13 +4,13 @@ import { CookFeed } from "@/components/CookFeed";
 import { FeedHeader } from "@/components/FeedHeader";
 import { EmptyState, button } from "@/components/ui";
 import { getDid } from "@/lib/auth/session";
-import { getCookFeed } from "@/lib/db/queries";
+import { getFeed } from "@/lib/db/queries";
 
 // Every cook indexed from the network, newest first (§2.1).
 export default async function GlobalPage() {
   const viewer = await getDid();
   if (!viewer) redirect("/");
-  const initial = await getCookFeed({ viewer });
+  const initial = await getFeed({ viewer });
 
   return (
     <>

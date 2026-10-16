@@ -5,16 +5,19 @@ import { Link2, Share, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { CookImage } from "@/lib/db/schema";
 import { imageUrl } from "@/lib/image/url";
-import { cookPath } from "@/lib/links";
-import { blueskyPostText, cookShareText, cookShareUrl, messageText } from "@/lib/share";
+import { cookPath, visitPath } from "@/lib/links";
+import { type ShareText, blueskyPostText, cookShareUrl, messageText, visitShareUrl } from "@/lib/share";
+import { startReauth } from "./reauth";
 import { ErrorText, button } from "./ui";
 
-type ShareCook = {
+// A cook or a visit, with what its share says (cookShareText /
+// visitShareText).
+export type SharePost = {
+  kind: "cook" | "visit";
   uri: string;
   rkey: string;
   authorDid: string;
-  dishName: string;
-  note: string | null;
+  text: ShareText;
   images: CookImage[];
 };
 
@@ -28,10 +31,10 @@ type BskyState =
 
 // Photos as JPEG files for the share sheet. The proxy serves WebP, which
 // some SMS/MMS recipients can't open, so re-encode in the browser.
-async function photoFiles(cook: ShareCook, signal: AbortSignal): Promise<File[]> {
+async function photoFiles(post: SharePost, signal: AbortSignal): Promise<File[]> {
   return Promise.all(
-    cook.images.map(async (img, i) => {
-      const res = await fetch(imageUrl(cook.authorDid, img.cid, "full"), { signal });
+    post.images.map(async (img, i) => {
+      const res = await fetch(imageUrl(post.authorDid, img.cid, "full"), { signal });
       if (!res.ok) throw new Error(`image ${res.status}`);
       const bitmap = await createImageBitmap(await res.blob());
       const canvas = document.createElement("canvas");
@@ -42,17 +45,17 @@ async function photoFiles(cook: ShareCook, signal: AbortSignal): Promise<File[]>
       const jpeg = await new Promise<Blob>((resolve, reject) =>
         canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/jpeg", 0.9),
       );
-      return new File([jpeg], `cook-${i + 1}.jpg`, { type: "image/jpeg" });
+      return new File([jpeg], `${post.kind}-${i + 1}.jpg`, { type: "image/jpeg" });
     }),
   );
 }
 
-// Share a cook (header icon → sheet): post it to Bluesky (the author only;
-// the post reuses the photos already in their repo), or
-// open the phone's native share sheet (iOS/Android) with the photos, text
-// and link, to send it anywhere.
-export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
-  cook: ShareCook;
+// Share a cook or a visit (header icon → sheet): post it to Bluesky (the
+// author only; the post reuses the photos already in their repo), or open
+// the phone's native share sheet (iOS/Android) with the photos, text and
+// link, to send it anywhere.
+export function SharePostButton({ post, canPostToBluesky, viewerDid }: {
+  post: SharePost;
   canPostToBluesky: boolean;
   viewerDid: string;
 }) {
@@ -78,14 +81,16 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
   useEffect(() => {
     if (!open || files !== "loading") return;
     const ctrl = new AbortController();
-    photoFiles(cook, ctrl.signal).then(setFiles, () => {
+    photoFiles(post, ctrl.signal).then(setFiles, () => {
       if (!ctrl.signal.aborted) setFiles("failed");
     });
     return () => ctrl.abort();
-  }, [open, files, cook]);
+  }, [open, files, post]);
 
-  const url = origin ? cookShareUrl(origin, cook.authorDid, cook.rkey) : "";
-  const preview = url ? blueskyPostText(cookShareText(cook), url).text : "";
+  const isVisit = post.kind === "visit";
+  const path = (isVisit ? visitPath : cookPath)(post.authorDid, post.rkey);
+  const url = origin ? (isVisit ? visitShareUrl : cookShareUrl)(origin, post.authorDid, post.rkey) : "";
+  const preview = url ? blueskyPostText(post.text, url).text : "";
 
   function show() {
     setOrigin(window.location.origin);
@@ -101,7 +106,7 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
       const res = await fetch("/api/share/bluesky", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cook: cook.uri, rkey: (rkey.current ??= TID.nextStr()) }),
+        body: JSON.stringify({ cook: post.uri, rkey: (rkey.current ??= TID.nextStr()) }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 403 && data.reauth) return setBsky({ kind: "reauth" });
@@ -113,18 +118,11 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
   }
 
   // Sign in again (same account) to grant the Bluesky post scope, then come
-  // back to this cook.
+  // back to this post.
   async function signInAgain() {
     setBsky({ kind: "redirecting" });
     try {
-      const res = await fetch("/oauth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ handle: viewerDid, next: cookPath(cook.authorDid, cook.rkey) }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error();
-      window.location.href = data.redirectUrl;
+      await startReauth(viewerDid, path);
     } catch {
       setBsky({ kind: "error", message: "Couldn't start sign-in. Try again." });
     }
@@ -132,7 +130,7 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
 
   async function shareNative() {
     setMessageError(null);
-    const text = messageText(cookShareText(cook), url);
+    const text = messageText(post.text, url);
     const withFiles = Array.isArray(files) && files.length > 0 ? { files, text } : null;
     try {
       if (navigator.share) {
@@ -160,14 +158,14 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
     }
   }
 
-  const first = cook.images[0];
+  const first = post.images[0];
 
   return (
     <>
       <button
         type="button"
         onClick={show}
-        aria-label="Share cook"
+        aria-label={isVisit ? "Share visit" : "Share cook"}
         className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted active:bg-sunken"
       >
         <Share size={21} strokeWidth={1.8} aria-hidden />
@@ -185,7 +183,7 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
         className="m-auto mb-[calc(env(safe-area-inset-bottom)+0.5rem)] w-[min(28rem,calc(100vw-1rem))] rounded-sheet bg-surface p-5 text-foreground backdrop:bg-black/50 backdrop:backdrop-blur-[2px]"
       >
         <div className="flex items-center justify-between">
-          <h2 id="share-h" className="font-display text-dish">Share this cook</h2>
+          <h2 id="share-h" className="font-display text-dish">{isVisit ? "Share this visit" : "Share this cook"}</h2>
           <button
             type="button"
             onClick={() => setOpen(false)}
@@ -200,15 +198,15 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
           {first && (
             // eslint-disable-next-line @next/next/no-img-element -- already resized by our image proxy
             <img
-              src={imageUrl(cook.authorDid, first.cid, "thumb")}
+              src={imageUrl(post.authorDid, first.cid, "thumb")}
               alt=""
               className="h-16 w-16 shrink-0 rounded-control bg-background object-cover"
             />
           )}
           <div className="min-w-0 flex-1">
             <p className="line-clamp-4 text-small break-words whitespace-pre-line">{preview}</p>
-            {cook.images.length > 1 && (
-              <p className="mt-1 text-caption text-muted">{cook.images.length} photos</p>
+            {post.images.length > 1 && (
+              <p className="mt-1 text-caption text-muted">{post.images.length} photos</p>
             )}
           </div>
         </div>

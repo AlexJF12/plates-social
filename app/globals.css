@@ -4,7 +4,9 @@
  * Design tokens (§7, Phase 6.5). A cookbook crossed with Strava: warm paper
  * and ink, one basil-green accent for interactive things and active kudos,
  * a display serif (Young Serif, --font-display) for dish names, titles and
- * stat figures, system sans for everything else.
+ * stat figures, system sans for everything else. A second, terracotta pair
+ * (`out`, `out-soft`, Phase 6.8) marks eating out: the "Ate out" label and
+ * the stars. It is never used for interactive things; those stay basil.
  * Keep the backgrounds and accent in sync with THEME in lib/config.ts
  * (manifest, theme-color, offline page).
  */
@@ -18,6 +20,10 @@
   --accent: #2f6b3f; /* basil */
   --accent-foreground: #ffffff;
   --accent-soft: #e3ede3;
+  /* Eating out. AA: out 5.42 on background, 5.86 on surface, 4.93 on
+     sunken, 4.83 on out-soft. */
+  --out: #a8471f;
+  --out-soft: #f7e6dc;
   --danger: #b42318;
 }
 
@@ -32,6 +38,10 @@
     --accent: #8cc596;
     --accent-foreground: #10200f;
     --accent-soft: #1f2e21;
+    /* AA: out 7.68 on background, 7.10 on surface, 8.05 on sunken, 6.17
+       on out-soft. */
+    --out: #e8916d;
+    --out-soft: #3a2117;
     --danger: #f07f72;
   }
 }
@@ -46,6 +56,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent-soft: var(--accent-soft);
+  --color-out: var(--out);
+  --color-out-soft: var(--out-soft);
   --color-danger: var(--danger);
   --font-sans:
     system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,

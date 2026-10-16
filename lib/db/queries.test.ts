@@ -7,7 +7,7 @@ import {
   getComments,
   getCookDayCounts,
   getCookDetail,
-  getCookFeed,
+  getFeed,
   getFollowUri,
   getImportCandidates,
   getKudosUri,
@@ -58,14 +58,14 @@ async function allPages(db: Kysely<DatabaseSchema>, authorDid?: string) {
   const pages = [];
   let cursor: string | null = null;
   do {
-    const page = await getCookFeed({ db, authorDid, cursor });
+    const page = await getFeed({ db, authorDid, cursor });
     pages.push(page.items.filter((c) => c.author.did in HANDLES).map((c) => c.uri));
     cursor = page.cursor;
   } while (cursor);
   return pages;
 }
 
-describe("getCookFeed", () => {
+describe("getFeed", () => {
   it("pages 20 at a time, newest first, with no gaps or repeats, even when sortAt ties", async () => {
     await inRollback(async (db) => {
       // Pairs of cooks share a sortAt, so the uri tie-breaker matters.
@@ -92,14 +92,14 @@ describe("getCookFeed", () => {
         .values({ uri: `at://${BOB}/${COLLECTIONS.comment}/${rkey(0)}`, authorDid: BOB, subjectUri, text: "Nice", createdAt: new Date(), sortAt: new Date() })
         .execute();
 
-      let alice = (await getCookFeed({ db, authorDid: ALICE })).items[0];
+      let alice = (await getFeed({ db, authorDid: ALICE })).items[0];
       expect([alice.kudosCount, alice.commentCount]).toEqual([1, 1]);
       expect((await getCookDetail(ALICE, rkey(0), db))?.comments.items).toHaveLength(1);
 
       await db.updateTable("account").set({ active: false }).where("did", "=", BOB).execute();
-      alice = (await getCookFeed({ db, authorDid: ALICE })).items[0];
+      alice = (await getFeed({ db, authorDid: ALICE })).items[0];
       expect([alice.kudosCount, alice.commentCount]).toEqual([0, 0]);
-      expect((await getCookFeed({ db, authorDid: BOB })).items).toEqual([]);
+      expect((await getFeed({ db, authorDid: BOB })).items).toEqual([]);
       const detail = await getCookDetail(ALICE, rkey(0), db);
       expect([detail?.kudos, detail?.comments.items]).toEqual([[], []]);
       expect(await getCookDetail(BOB, rkey(0), db)).toBeNull();
@@ -109,7 +109,7 @@ describe("getCookFeed", () => {
   it("ignores a malformed cursor", async () => {
     await inRollback(async (db) => {
       await seed(db, ALICE, 1, () => new Date("2020-01-01T00:00:00Z"));
-      expect((await getCookFeed({ db, authorDid: ALICE, cursor: "garbage" })).items).toHaveLength(1);
+      expect((await getFeed({ db, authorDid: ALICE, cursor: "garbage" })).items).toHaveLength(1);
     });
   });
 });
@@ -144,9 +144,9 @@ describe("following feed", () => {
       // Carol follows Alice; that mustn't put Carol's cooks in Alice's feed.
       await addFollow(db, CAROL, ALICE);
 
-      const first = await getCookFeed({ db, followedBy: ALICE });
+      const first = await getFeed({ db, followedBy: ALICE });
       expect(first.cursor).not.toBeNull();
-      const second = await getCookFeed({ db, followedBy: ALICE, cursor: first.cursor });
+      const second = await getFeed({ db, followedBy: ALICE, cursor: first.cursor });
       const uris = [...first.items, ...second.items].map((c) => c.uri);
       const expected = Array.from({ length: 15 }, (_, k) => 14 - k).flatMap((i) => [cookUri(BOB, i), cookUri(ALICE, i)]);
       expect(first.items).toHaveLength(PAGE_SIZE);
@@ -160,14 +160,14 @@ describe("following feed", () => {
       await seed(db, ALICE, 0, () => new Date());
       await seed(db, BOB, 1, () => new Date("2020-01-01T00:00:00Z"));
       await addFollow(db, ALICE, BOB);
-      expect((await getCookFeed({ db, followedBy: ALICE })).items).toHaveLength(1);
+      expect((await getFeed({ db, followedBy: ALICE })).items).toHaveLength(1);
 
       await db.updateTable("account").set({ active: false }).where("did", "=", BOB).execute();
-      expect((await getCookFeed({ db, followedBy: ALICE })).items).toEqual([]);
+      expect((await getFeed({ db, followedBy: ALICE })).items).toEqual([]);
 
       await db.updateTable("account").set({ active: true }).where("did", "=", BOB).execute();
       await db.deleteFrom("follow").where("authorDid", "=", ALICE).execute();
-      expect((await getCookFeed({ db, followedBy: ALICE })).items).toEqual([]);
+      expect((await getFeed({ db, followedBy: ALICE })).items).toEqual([]);
     });
   });
 });
@@ -265,7 +265,7 @@ describe("orphans (§6.2)", () => {
       expect(await getVisiblePost(subject, db)).toBeNull();
       expect(await rowCounts(db)).toEqual([1, 1]);
       // Bob's own cook still shows its counts untouched.
-      expect((await getCookFeed({ db, authorDid: BOB })).items).toHaveLength(1);
+      expect((await getFeed({ db, authorDid: BOB })).items).toHaveLength(1);
     });
   });
 
@@ -319,13 +319,13 @@ describe("DENYLIST_DIDS (§7)", () => {
       await db.insertInto("account").values({ did: CAROL, handle: HANDLES[CAROL] }).execute();
 
       const bobVisible = async () => ({
-        global: (await getCookFeed({ db })).items.some((c) => c.author.did === BOB),
-        following: (await getCookFeed({ db, followedBy: ALICE })).items.some((c) => c.author.did === BOB),
+        global: (await getFeed({ db })).items.some((c) => c.author.did === BOB),
+        following: (await getFeed({ db, followedBy: ALICE })).items.some((c) => c.author.did === BOB),
         profile: (await getAccount(BOB, db)) !== null,
         byHandle: (await getAccount("bob.test", db)) !== null,
         detail: (await getCookDetail(BOB, rkey(0), db)) !== null,
         cook: (await getVisiblePost(cookUri(BOB, 0), db)) !== null,
-        counts: (await getCookFeed({ db, authorDid: ALICE })).items.map((c) => [c.kudosCount, c.commentCount]),
+        counts: (await getFeed({ db, authorDid: ALICE })).items.map((c) => [c.kudosCount, c.commentCount]),
         kudos: (await getCookDetail(ALICE, rkey(0), db))!.kudos.length,
         comments: (await getComments({ cookUri: subjectUri, db })).items.length,
         import: (await getImportCandidates(DAVE, [BOB], db)).length,
@@ -342,7 +342,7 @@ describe("DENYLIST_DIDS (§7)", () => {
         counts: [[0, 0]], kudos: 0, comments: 0, import: 0, days: 0,
       });
       // Others are unaffected.
-      expect((await getCookFeed({ db, authorDid: ALICE })).items).toHaveLength(1);
+      expect((await getFeed({ db, authorDid: ALICE })).items).toHaveLength(1);
 
       vi.stubEnv("DENYLIST_DIDS", "");
       expect(await bobVisible()).toEqual(shown);

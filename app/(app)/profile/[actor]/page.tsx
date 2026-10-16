@@ -12,7 +12,7 @@ import { getDid } from "@/lib/auth/session";
 import { formatMonth } from "@/lib/cook/best";
 import { mealTypeLabel } from "@/lib/cook/mealTypes";
 import { statsWindow } from "@/lib/cook/stats";
-import { getAccount, getAuthorBadges, getCookDayCounts, getCookFeed, getFollowUri } from "@/lib/db/queries";
+import { getAccount, getAuthorBadges, getCookDayCounts, getFeed, getFollowUri } from "@/lib/db/queries";
 import { cookPath, displayName } from "@/lib/links";
 
 // A person's stats and cooks, newest first. [actor] is a handle or a DID.
@@ -24,7 +24,7 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
   if (!account) notFound();
   const isMe = account.did === viewer;
   const [initial, days, followUri, wins] = await Promise.all([
-    getCookFeed({ authorDid: account.did, viewer }),
+    getFeed({ authorDid: account.did, viewer }),
     getCookDayCounts(account.did, statsWindow()),
     isMe ? null : getFollowUri(viewer, account.did),
     getAuthorBadges(account.did),
