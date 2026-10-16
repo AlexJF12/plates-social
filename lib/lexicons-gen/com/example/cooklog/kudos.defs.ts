@@ -11,12 +11,12 @@ type $nsid = typeof $nsid
 
 export { $nsid }
 
-/** Kudos from the author on a cook. */
+/** Kudos from the author on a cook or a visit. */
 type Main = {
   $type: 'com.example.cooklog.kudos'
 
   /**
-   * The cook record being given kudos.
+   * The cook or visit record being given kudos.
    */
   subject: RepoStrongRef.Main
   createdAt: l.DatetimeString
@@ -24,7 +24,7 @@ type Main = {
 
 export type { Main }
 
-/** Kudos from the author on a cook. */
+/** Kudos from the author on a cook or a visit. */
 const main = /*#__PURE__*/ l.record<'tid', Main>(
   'tid',
   $nsid,

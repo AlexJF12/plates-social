@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "Kudos from the author on a cook.",
+      "description": "Kudos from the author on a cook or a visit.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -13,7 +13,7 @@
           "subject": {
             "type": "ref",
             "ref": "com.atproto.repo.strongRef",
-            "description": "The cook record being given kudos."
+            "description": "The cook or visit record being given kudos."
           },
           "createdAt": { "type": "string", "format": "datetime" }
         }

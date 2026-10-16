@@ -3,6 +3,7 @@
 // `pnpm lex:build`, then fix the import paths below. Nothing else imports
 // from lib/lexicons-gen.
 export * as cook from "./lexicons-gen/com/example/cooklog/cook";
+export * as visit from "./lexicons-gen/com/example/cooklog/visit";
 export * as kudos from "./lexicons-gen/com/example/cooklog/kudos";
 export * as comment from "./lexicons-gen/com/example/cooklog/comment";
 export * as follow from "./lexicons-gen/com/example/cooklog/follow";

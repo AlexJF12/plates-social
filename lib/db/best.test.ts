@@ -236,7 +236,19 @@ describe("badges", () => {
         ["snack", snack, 1],
         ["bread", null, 0],
         ["dessert", null, 0],
+        ["drinks", null, 0],
       ]);
+    });
+  });
+
+  it("drinks is a Best category of its own", async () => {
+    await inRollback(async (db) => {
+      await accounts(db, A, B);
+      const drinks = await cook(db, A, "2020-03-10T18:00:00Z", "drinks");
+      await kudos(db, drinks, B);
+      const best = await getBestOfMonth("2020-03", db);
+      expect(best.find((b) => b.mealType === "drinks")?.cook?.uri).toBe(drinks);
+      expect(best.filter((b) => b.cook).map((b) => b.mealType)).toEqual(["drinks"]);
     });
   });
 });

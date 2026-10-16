@@ -201,6 +201,64 @@ const migrations: Record<string, Migration> = {
       await sql`drop function immutable_unaccent(text)`.execute(db);
     },
   },
+
+  // Eating out (Phase 6.8): a meal at a restaurant, with a review. Mirrors
+  // `cook` (a copy of NS.visit records, rebuildable from Tap, §0.14).
+  // Kudos and comments on visits reuse those tables (subjectUri is a visit).
+  "005_visit": {
+    async up(db: Kysely<unknown>) {
+      await db.schema
+        .createTable("visit")
+        .addColumn("uri", "text", (col) => col.primaryKey())
+        .addColumn("cid", "text", (col) => col.notNull())
+        .addColumn("authorDid", "text", (col) => col.notNull())
+        .addColumn("restaurantName", "text", (col) => col.notNull())
+        .addColumn("restaurantArea", "text")
+        .addColumn("rating", "smallint", (col) => col.notNull())
+        .addColumn("review", "text")
+        .addColumn("mealType", "text", (col) => col.notNull())
+        .addColumn("images", "jsonb", (col) => col.notNull())
+        // Original string with the author's offset, like cook.cookedAt.
+        .addColumn("visitedAt", "text", (col) => col.notNull())
+        .addColumn("visitedAtUtc", "timestamptz", (col) => col.notNull())
+        // Calendar date in the author's own offset (eating-out stats, and
+        // the date shown instead of a time).
+        .addColumn("visitedLocalDate", "date", (col) => col.notNull())
+        .addColumn("createdAt", "timestamptz", (col) => col.notNull())
+        .addColumn("indexedAt", "timestamptz", (col) =>
+          col.notNull().defaultTo(sql`now()`),
+        )
+        // min(createdAt, indexedAt), as for cooks.
+        .addColumn("sortAt", "timestamptz", (col) => col.notNull())
+        .execute();
+      // Global feed, cursor (sortAt, uri).
+      await db.schema
+        .createIndex("visit_sort_idx")
+        .on("visit")
+        .columns(["sortAt desc", "uri desc"])
+        .execute();
+      // Profile and following feeds.
+      await db.schema
+        .createIndex("visit_author_sort_idx")
+        .on("visit")
+        .columns(["authorDid", "sortAt desc", "uri desc"])
+        .execute();
+      // Eating-out stats (per author, by local date).
+      await db.schema
+        .createIndex("visit_author_local_date_idx")
+        .on("visit")
+        .columns(["authorDid", "visitedLocalDate"])
+        .execute();
+      // Restaurant name + area substring search, as cook_dish_trgm_idx.
+      await sql`
+        create index visit_restaurant_trgm_idx on visit
+        using gin ((immutable_unaccent("restaurantName" || ' ' || coalesce("restaurantArea", ''))) gin_trgm_ops)
+      `.execute(db);
+    },
+    async down(db: Kysely<unknown>) {
+      await db.schema.dropTable("visit").execute();
+    },
+  },
 };
 
 export function getMigrator() {

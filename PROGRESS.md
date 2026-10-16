@@ -1,5 +1,39 @@
 # Progress
 
+## Phase 6.8 — Eating out (restaurant visits with reviews) — ⏸ at checkpoint A (Lexicon + migration), waiting for approval
+
+Branch: `feature/phase-6.8` (from main after PR #15). Spec: §4 `NS.visit`, §8 Phase 6.8.
+
+### Built (step 1 only)
+
+- **`lexicons/com/example/cooklog/visit.json`**: `restaurant` (`#restaurant`: `name` 1–100 graphemes, optional `area` ≤ 100), `rating` integer 1–5, optional `review` ≤ 1000 graphemes, `mealType` (`knownValues` incl. `drinks`, max 64 chars), `images` (1–4 × `com.example.cooklog.cook#image`, so the same blob limits), `visitedAt` / `createdAt` datetimes. Byte caps (`maxLength` = 10× graphemes) as in `cook.json`.
+- `cook.json`: `drinks` added to `knownValues`. `kudos.json` / `comment.json`: descriptions say "a cook or a visit" (schemas unchanged).
+- `pnpm lex:build` → `lib/lexicons-gen/com/example/cooklog/visit*.ts`; re-exported as `visit` from `lib/lexicons.ts`. `COLLECTIONS.visit` in `lib/config.ts` (not yet in `SCOPE`: that's step 3).
+- `MEAL_TYPES` gains `{ value: "drinks", label: "Drinks" }`, so the Log chips, search chips, `/api/cook` validation and the Best tab (now 7 categories) pick it up.
+- **Migration `005_visit`** (additive): table `visit` as in the spec, plus `VisitTable` in `lib/db/schema.ts`. Indexes: `visit_sort_idx (sortAt desc, uri desc)`, `visit_author_sort_idx (authorDid, sortAt desc, uri desc)`, `visit_author_local_date_idx (authorDid, visitedLocalDate)`, `visit_restaurant_trgm_idx` GIN on `immutable_unaccent("restaurantName" || ' ' || coalesce("restaurantArea", ''))`.
+
+### Decisions not in the spec
+
+- No icon for Drinks: meal types have no icons anywhere in the app today (chips and labels are text), so there's nothing to keep it "in keeping with".
+- Added `visit_author_local_date_idx`, mirroring `cook_author_local_date_idx`, for the eating-out stats (step 5).
+- `area` has no `minGraphemes`: the spec only gives a max. The write route (step 4) will omit an empty area instead of writing `""`.
+- The `restaurant` object has a description noting there's no place ID, so reviews of one place aren't linked.
+
+### Verified (and how)
+
+- `pnpm test`: 180/180 (new: 29 visit parse cases in `lib/lexicons.test.ts` — valid record, 4 webp/no area/no review/no alt, ratings 1 and 5, `drinks` and unknown meal types; rejects rating 0/6/3.5/"4"/missing, missing/empty/101-grapheme name, 101-grapheme area, 1001-grapheme review, 0 and 5 images, PNG, >1 MB, missing aspectRatio, `visitedAt` without an offset, a bad/missing `visitedAt`, missing mealType, a cook `$type`; `drinks` on a cook; `lib/db/best.test.ts`: Best lists 7 categories, drinks wins its own).
+- `pnpm typecheck`, `pnpm lint`: clean (a fresh clone needs `pnpm next typegen` first for `PageProps`/`LayoutProps`).
+- `pnpm migrate` on local Postgres 16 (native, no Docker in the cloud session): `005_visit` applied; `\d visit` shows the columns and the four indexes.
+- `pnpm test:e2e` (cloud Chromium via a throwaway config): 38/39. `best-search.spec.ts` now expects 7 Best rows. The failure is `profile.spec.ts` "someone's profile …" (24 cards expected, 25 seen): the pull-to-refresh test in another worker inserts a Mira cook at the same time. Not caused by this change; the spec passes on its own (twice).
+
+### Known issues
+
+- Pre-existing: the parallel e2e race above (pull-to-refresh's inserted Mira cook vs the Mira profile count). Fix later by giving the inserted cook a different author, or running those two specs serially.
+
+### Next step
+
+Human reviews the Lexicon JSON and migration (checkpoint A). After approval: steps 2–3 (indexer, kudos/comment subjects, Tap signal collection, rebuild, proxy, `repo:NS.visit` scope) per the build order in SPEC §8 Phase 6.8.
+
 ## Sharing (human-requested, outside the phase plan) — merged (PR #12, 2026-10-12); Bluesky posting verified live, share sheet and signed-out link still to try
 
 Branch: `feature/sharing` (from main after PR #10). Spec: §0.5 (one approved `app.bsky.*` write), §2.1, §2.2, §5 updated.

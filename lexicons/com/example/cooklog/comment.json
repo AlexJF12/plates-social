@@ -4,7 +4,7 @@
   "defs": {
     "main": {
       "type": "record",
-      "description": "A comment on a cook. Comments are flat, not threaded.",
+      "description": "A comment on a cook or a visit. Comments are flat, not threaded.",
       "key": "tid",
       "record": {
         "type": "object",
@@ -13,7 +13,7 @@
           "subject": {
             "type": "ref",
             "ref": "com.atproto.repo.strongRef",
-            "description": "The cook record being commented on."
+            "description": "The cook or visit record being commented on."
           },
           "text": {
             "type": "string",

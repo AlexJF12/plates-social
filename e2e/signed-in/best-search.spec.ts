@@ -7,7 +7,7 @@ test("Best: winners per meal, month limits, badges", async ({ page }) => {
   await page.goto(`/best/${BEST_MONTH}`);
   await expect(page.getByRole("heading", { name: "June 2025" })).toBeVisible();
   const rows = page.getByTestId("best-row");
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(7); // the 7 known meal types, drinks last
   await expect(rows.nth(0)).toContainText("Ginger congee");
   await expect(rows.nth(1)).toContainText("No winner yet"); // lunch: Miso soup has no kudos
   await expect(rows.nth(2)).toContainText("Braised short ribs");

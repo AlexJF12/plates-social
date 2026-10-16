@@ -1,7 +1,7 @@
 import { jsonToLex } from "@atproto/lex";
 import { describe, expect, it } from "vitest";
 import { COLLECTIONS } from "./config";
-import { comment, cook, follow, kudos } from "./lexicons";
+import { comment, cook, follow, kudos, visit } from "./lexicons";
 
 // Records arrive from Tap as JSON (CIDs as {"$link": ...}), so every fixture
 // goes through jsonToLex before $parse, the same path the webhook will use.
@@ -39,6 +39,7 @@ const validCook = (overrides: object = {}) => ({
 describe("lexicon ids match NS", () => {
   it("uses the collections from lib/config", () => {
     expect(cook.$type).toBe(COLLECTIONS.cook);
+    expect(visit.$type).toBe(COLLECTIONS.visit);
     expect(kudos.$type).toBe(COLLECTIONS.kudos);
     expect(comment.$type).toBe(COLLECTIONS.comment);
     expect(follow.$type).toBe(COLLECTIONS.follow);
@@ -66,6 +67,10 @@ describe("cook", () => {
     expect(parse(cook, validCook({ mealType: "brunch" })).mealType).toBe(
       "brunch",
     );
+  });
+
+  it("accepts drinks", () => {
+    expect(parse(cook, validCook({ mealType: "drinks" })).mealType).toBe("drinks");
   });
 
   it("accepts 100 graphemes of emoji in dishName", () => {
@@ -96,6 +101,72 @@ describe("cook", () => {
     ["wrong $type", { $type: "app.bsky.feed.post" }],
   ])("rejects %s", (_name, overrides) => {
     expect(() => parse(cook, validCook(overrides))).toThrow();
+  });
+});
+
+const validVisit = (overrides: object = {}) => ({
+  $type: COLLECTIONS.visit,
+  restaurant: { name: "Lilia", area: "Brooklyn" },
+  rating: 4,
+  review: "The sheep's milk agnolotti.",
+  mealType: "dinner",
+  images: [image()],
+  visitedAt: "2026-10-14T20:15:00-04:00",
+  createdAt: "2026-10-15T00:16:40.000Z",
+  ...overrides,
+});
+
+describe("visit", () => {
+  it("accepts a valid record and keeps the offset in visitedAt", () => {
+    const rec = parse(visit, validVisit());
+    expect(rec.restaurant).toEqual({ name: "Lilia", area: "Brooklyn" });
+    expect(rec.rating).toBe(4);
+    expect(rec.visitedAt).toBe("2026-10-14T20:15:00-04:00");
+    expect(rec.images).toHaveLength(1);
+  });
+
+  it("accepts 4 webp images, no area, no review and no alt", () => {
+    const imgs = Array.from({ length: 4 }, () =>
+      image({ image: blob("image/webp"), alt: undefined }),
+    );
+    expect(() =>
+      parse(visit, validVisit({ restaurant: { name: "Lilia" }, review: undefined, images: imgs })),
+    ).not.toThrow();
+  });
+
+  it.each([1, 5])("accepts rating %i", (rating) => {
+    expect(parse(visit, validVisit({ rating })).rating).toBe(rating);
+  });
+
+  it("accepts drinks and unknown meal types", () => {
+    expect(parse(visit, validVisit({ mealType: "drinks" })).mealType).toBe("drinks");
+    expect(parse(visit, validVisit({ mealType: "brunch" })).mealType).toBe("brunch");
+  });
+
+  it.each([
+    ["rating 0", { rating: 0 }],
+    ["rating 6", { rating: 6 }],
+    ["non-integer rating", { rating: 3.5 }],
+    ["string rating", { rating: "4" }],
+    ["missing rating", { rating: undefined }],
+    ["missing restaurant", { restaurant: undefined }],
+    ["empty restaurant name", { restaurant: { name: "" } }],
+    ["missing restaurant name", { restaurant: { area: "Brooklyn" } }],
+    ["101-grapheme restaurant name", { restaurant: { name: "a".repeat(101) } }],
+    ["101-grapheme area", { restaurant: { name: "Lilia", area: "a".repeat(101) } }],
+    ["1001-grapheme review", { review: "a".repeat(1001) }],
+    ["no images", { images: [] }],
+    ["5 images", { images: Array.from({ length: 5 }, () => image()) }],
+    ["png image", { images: [image({ image: blob("image/png") })] }],
+    ["image over 1,000,000 bytes", { images: [image({ image: blob("image/jpeg", 1_000_001) })] }],
+    ["missing aspectRatio", { images: [image({ aspectRatio: undefined })] }],
+    ["visitedAt without an offset", { visitedAt: "2026-10-14T20:15:00" }],
+    ["bad visitedAt", { visitedAt: "last night" }],
+    ["missing visitedAt", { visitedAt: undefined }],
+    ["missing mealType", { mealType: undefined }],
+    ["wrong $type (a cook)", { $type: COLLECTIONS.cook }],
+  ])("rejects %s", (_name, overrides) => {
+    expect(() => parse(visit, validVisit(overrides))).toThrow();
   });
 });
 
