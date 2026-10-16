@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CookImage } from "@/lib/db/schema";
 import { imageUrl } from "@/lib/image/url";
 import { cookPath } from "@/lib/links";
-import { blueskyPostText, cookShareUrl, messageText } from "@/lib/share";
+import { blueskyPostText, cookShareText, cookShareUrl, messageText } from "@/lib/share";
 import { ErrorText, button } from "./ui";
 
 type ShareCook = {
@@ -85,7 +85,7 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
   }, [open, files, cook]);
 
   const url = origin ? cookShareUrl(origin, cook.authorDid, cook.rkey) : "";
-  const preview = url ? blueskyPostText(cook, url).text : "";
+  const preview = url ? blueskyPostText(cookShareText(cook), url).text : "";
 
   function show() {
     setOrigin(window.location.origin);
@@ -132,7 +132,7 @@ export function ShareCookButton({ cook, canPostToBluesky, viewerDid }: {
 
   async function shareNative() {
     setMessageError(null);
-    const text = messageText(cook, url);
+    const text = messageText(cookShareText(cook), url);
     const withFiles = Array.isArray(files) && files.length > 0 ? { files, text } : null;
     try {
       if (navigator.share) {

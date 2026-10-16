@@ -8,7 +8,8 @@ import { inRollback } from "../db/testing";
 import type { DatabaseSchema } from "../db/schema";
 import { indexEvent } from ".";
 import { cookRow, upsertCook } from "./cook";
-import { cook } from "../lexicons";
+import { upsertVisit, visitRow } from "./visit";
+import { cook, visit } from "../lexicons";
 
 // Real SQL in a rolled-back transaction (lib/db/testing.ts). Assertions
 // only look at rows for the test DIDs below.
@@ -20,6 +21,7 @@ const CID2 = "bafyreihmsoquhgytsqbyiegd2sytontm55s765olkl5nzdoabvhud46kia";
 const RKEY = "3mwovhkvtw723";
 const RKEY2 = "3mwovhkvtw223";
 const COOK_URI = `at://${ALICE}/${COLLECTIONS.cook}/${RKEY}`;
+const VISIT_URI = `at://${ALICE}/${COLLECTIONS.visit}/${RKEY}`;
 
 afterAll(() => getDb().destroy());
 
@@ -74,7 +76,19 @@ const cookJson = (overrides: object = {}) => ({
   createdAt: "2026-09-30T01:05:00.000Z",
   ...overrides,
 });
+const visitJson = (overrides: object = {}) => ({
+  $type: COLLECTIONS.visit,
+  restaurant: { name: "Lilia", area: "Brooklyn" },
+  rating: 4,
+  review: "Agnolotti",
+  mealType: "dinner",
+  images: [{ image: blob(), aspectRatio: { width: 3, height: 4 } }],
+  visitedAt: "2026-10-14T21:00:00-04:00",
+  createdAt: "2026-10-15T01:05:00.000Z",
+  ...overrides,
+});
 const strongRef = { uri: COOK_URI, cid: CID2 };
+const visitRef = { uri: VISIT_URI, cid: CID2 };
 const kudosJson = (createdAt = "2026-09-30T02:00:00.000Z", subject = strongRef) => ({
   $type: COLLECTIONS.kudos,
   subject,
@@ -93,11 +107,14 @@ const profileJson = {
   avatar: { $type: "blob", ref: { $link: CID1 }, mimeType: "image/png", size: 999 },
 };
 
+const EMPTY = { account: [], cook: [], visit: [], kudos: [], comment: [], follow: [] };
+
 // Every index row belonging to the test DIDs.
 async function snapshot(db: Kysely<DatabaseSchema>) {
   return {
     account: await db.selectFrom("account").selectAll().where("did", "in", DIDS).orderBy("did").execute(),
     cook: await db.selectFrom("cook").selectAll().where("authorDid", "in", DIDS).orderBy("uri").execute(),
+    visit: await db.selectFrom("visit").selectAll().where("authorDid", "in", DIDS).orderBy("uri").execute(),
     kudos: await db.selectFrom("kudos").selectAll().where("authorDid", "in", DIDS).orderBy("uri").execute(),
     comment: await db.selectFrom("comment").selectAll().where("authorDid", "in", DIDS).orderBy("uri").execute(),
     follow: await db.selectFrom("follow").selectAll().where("authorDid", "in", DIDS).orderBy("uri").execute(),
@@ -112,9 +129,12 @@ describe("indexEvent: replaying an event changes nothing", () => {
     ["identity", identityEvt(ALICE, "active")],
     ["profile", recordEvt(ALICE, "app.bsky.actor.profile", "self", "create", profileJson)],
     ["cook", recordEvt(ALICE, COLLECTIONS.cook, RKEY, "create", cookJson({ createdAt: FUTURE }))],
+    ["visit", recordEvt(ALICE, COLLECTIONS.visit, RKEY, "create", visitJson({ createdAt: FUTURE }))],
     ["kudos", recordEvt(BOB, COLLECTIONS.kudos, RKEY, "create", kudosJson())],
     ["comment", recordEvt(BOB, COLLECTIONS.comment, RKEY, "create", commentJson(undefined, FUTURE))],
     ["follow", recordEvt(BOB, COLLECTIONS.follow, RKEY, "create", followJson)],
+    ["kudos on a visit", recordEvt(BOB, COLLECTIONS.kudos, RKEY2, "create", kudosJson(undefined, visitRef))],
+    ["visit delete", recordEvt(ALICE, COLLECTIONS.visit, RKEY, "delete")],
     ["cook delete", recordEvt(ALICE, COLLECTIONS.cook, RKEY, "delete")],
     ["profile delete", recordEvt(ALICE, "app.bsky.actor.profile", "self", "delete")],
   ] as const;
@@ -135,13 +155,14 @@ describe("indexEvent: replaying an event changes nothing", () => {
 
   it("replaying the whole stream from the start is a no-op", async () => {
     await inRollback(async (db) => {
-      const evts = events().slice(0, 6);
+      const evts = events().slice(0, 8);
       for (const [, evt] of evts) await indexEvent(db, evt);
       const before = await snapshot(db);
       for (const [, evt] of evts) await indexEvent(db, evt, new Date(Date.now() + 60_000));
       expect(await snapshot(db)).toEqual(before);
       expect(before.cook).toHaveLength(1);
-      expect(before.kudos).toHaveLength(1);
+      expect(before.visit).toHaveLength(1);
+      expect(before.kudos).toHaveLength(2);
       expect(before.comment).toHaveLength(1);
       expect(before.follow).toHaveLength(1);
       expect(before.account.find((a) => a.did === ALICE)).toMatchObject({
@@ -160,6 +181,18 @@ describe("indexEvent: replaying an event changes nothing", () => {
       const before = await snapshot(db);
       await indexEvent(db, recordEvt(ALICE, COLLECTIONS.cook, RKEY, "create", cookJson()), new Date(Date.now() + 60_000));
       expect((await snapshot(db)).cook).toEqual(before.cook);
+    });
+  });
+});
+
+describe("indexEvent: visits after read-your-own-writes", () => {
+  it("Tap delivering a visit after the read-your-own-writes upsert is a no-op", async () => {
+    await inRollback(async (db) => {
+      const record = visit.$parse(jsonToLex(visitJson()));
+      await upsertVisit(db, visitRow({ uri: VISIT_URI, cid: CID2, authorDid: ALICE, record }));
+      const before = await snapshot(db);
+      await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY, "create", visitJson()), new Date(Date.now() + 60_000));
+      expect((await snapshot(db)).visit).toEqual(before.visit);
     });
   });
 });
@@ -202,7 +235,81 @@ describe("indexEvent: records", () => {
     await inRollback(async (db) => {
       const outcome = await indexEvent(db, recordEvt(ALICE, COLLECTIONS.cook, RKEY, "create", json));
       expect(outcome.kind).toBe("dropped");
-      expect(await snapshot(db)).toEqual({ account: [], cook: [], kudos: [], comment: [], follow: [] });
+      expect(await snapshot(db)).toEqual(EMPTY);
+    });
+  });
+
+  it("indexes a visit and deletes it", async () => {
+    await inRollback(async (db) => {
+      await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY, "create", visitJson()));
+      const [row] = (await snapshot(db)).visit;
+      expect(row).toMatchObject({
+        uri: VISIT_URI,
+        cid: CID2,
+        restaurantName: "Lilia",
+        restaurantArea: "Brooklyn",
+        rating: 4,
+        review: "Agnolotti",
+        mealType: "dinner",
+        visitedAt: "2026-10-14T21:00:00-04:00",
+        visitedLocalDate: "2026-10-14",
+      });
+      expect(row.visitedAtUtc.toISOString()).toBe("2026-10-15T01:00:00.000Z");
+      expect(row.images).toEqual([{ cid: CID1, mime: "image/jpeg", alt: null, aspectRatio: { width: 3, height: 4 } }]);
+      expect((await snapshot(db)).account.map((a) => a.did)).toEqual([ALICE]);
+      await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY, "delete"));
+      expect((await snapshot(db)).visit).toEqual([]);
+    });
+  });
+
+  it("stores a visit with no area, an empty area or no review as nulls", async () => {
+    await inRollback(async (db) => {
+      await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY, "create", visitJson({ restaurant: { name: "Lilia" }, review: undefined })));
+      await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY2, "create", visitJson({ restaurant: { name: "Lilia", area: "" } })));
+      const rows = (await snapshot(db)).visit;
+      expect(rows.map((r) => [r.restaurantArea, r.review])).toEqual([[null, "Agnolotti"], [null, null]]);
+    });
+  });
+
+  it("a visit update with a new cid replaces content but keeps sortAt", async () => {
+    await inRollback(async (db) => {
+      await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY, "create", visitJson()));
+      const [before] = (await snapshot(db)).visit;
+      await indexEvent(
+        db,
+        recordEvt(ALICE, COLLECTIONS.visit, RKEY, "update", visitJson({ rating: 2, restaurant: { name: "Via Carota" }, createdAt: "2020-01-01T00:00:00Z" }), CID1),
+      );
+      const [after] = (await snapshot(db)).visit;
+      expect(after).toMatchObject({ cid: CID1, rating: 2, restaurantName: "Via Carota", restaurantArea: null });
+      expect(after.sortAt).toEqual(before.sortAt);
+      expect(after.indexedAt).toEqual(before.indexedAt);
+    });
+  });
+
+  it.each([
+    ["rating 0", visitJson({ rating: 0 })],
+    ["rating 6", visitJson({ rating: 6 })],
+    ["empty restaurant name", visitJson({ restaurant: { name: "" } })],
+    ["5 images", visitJson({ images: Array(5).fill({ image: blob(), aspectRatio: { width: 1, height: 1 } }) })],
+    ["png image", visitJson({ images: [{ image: blob("image/png"), aspectRatio: { width: 1, height: 1 } }] })],
+    ["no offset in visitedAt", visitJson({ visitedAt: "2026-10-14T21:00:00" })],
+    ["a cook's $type", cookJson()],
+  ])("drops an invalid visit (%s) without indexing anything", async (_, json) => {
+    await inRollback(async (db) => {
+      const outcome = await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY, "create", json));
+      expect(outcome.kind).toBe("dropped");
+      expect(await snapshot(db)).toEqual(EMPTY);
+    });
+  });
+
+  it("indexes kudos and comments on a visit", async () => {
+    await inRollback(async (db) => {
+      const k = await indexEvent(db, recordEvt(BOB, COLLECTIONS.kudos, RKEY, "create", kudosJson(undefined, visitRef)));
+      const c = await indexEvent(db, recordEvt(BOB, COLLECTIONS.comment, RKEY, "create", { ...commentJson(), subject: visitRef }));
+      expect([k.kind, c.kind]).toEqual(["indexed", "indexed"]);
+      const snap = await snapshot(db);
+      expect(snap.kudos.map((r) => r.subjectUri)).toEqual([VISIT_URI]);
+      expect(snap.comment.map((r) => r.subjectUri)).toEqual([VISIT_URI]);
     });
   });
 
@@ -210,11 +317,11 @@ describe("indexEvent: records", () => {
     await inRollback(async (db) => {
       expect((await indexEvent(db, recordEvt(ALICE, COLLECTIONS.cook, "hello", "create", cookJson()))).kind).toBe("dropped");
       expect((await indexEvent(db, recordEvt(ALICE, "app.bsky.actor.profile", RKEY, "create", profileJson))).kind).toBe("dropped");
-      expect(await snapshot(db)).toEqual({ account: [], cook: [], kudos: [], comment: [], follow: [] });
+      expect(await snapshot(db)).toEqual(EMPTY);
     });
   });
 
-  it("drops kudos and comments whose subject is not a cook", async () => {
+  it("drops kudos and comments whose subject is not a cook or a visit", async () => {
     await inRollback(async (db) => {
       const notCook = { uri: `at://${ALICE}/app.bsky.feed.post/${RKEY}`, cid: CID2 };
       const k = await indexEvent(db, recordEvt(BOB, COLLECTIONS.kudos, RKEY, "create", kudosJson(undefined, notCook)));
@@ -269,6 +376,7 @@ describe("indexEvent: identity", () => {
   it("purges a deleted account's rows but not other people's rows about it", async () => {
     await inRollback(async (db) => {
       await indexEvent(db, recordEvt(ALICE, COLLECTIONS.cook, RKEY, "create", cookJson()));
+      await indexEvent(db, recordEvt(ALICE, COLLECTIONS.visit, RKEY, "create", visitJson()));
       await indexEvent(db, recordEvt(ALICE, COLLECTIONS.kudos, RKEY, "create", kudosJson()));
       await indexEvent(db, recordEvt(BOB, COLLECTIONS.kudos, RKEY, "create", kudosJson()));
       await indexEvent(db, recordEvt(BOB, COLLECTIONS.follow, RKEY, "create", followJson));
@@ -276,6 +384,7 @@ describe("indexEvent: identity", () => {
       const snap = await snapshot(db);
       expect(snap.account.map((a) => a.did)).toEqual([BOB]);
       expect(snap.cook).toEqual([]);
+      expect(snap.visit).toEqual([]);
       expect(snap.kudos.map((k) => k.authorDid)).toEqual([BOB]);
       expect(snap.follow).toHaveLength(1);
     });

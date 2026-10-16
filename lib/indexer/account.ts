@@ -75,6 +75,7 @@ export async function purgeAccount(
   did: string,
 ): Promise<void> {
   await db.deleteFrom("cook").where("authorDid", "=", did).execute();
+  await db.deleteFrom("visit").where("authorDid", "=", did).execute();
   await db.deleteFrom("kudos").where("authorDid", "=", did).execute();
   await db.deleteFrom("comment").where("authorDid", "=", did).execute();
   await db.deleteFrom("follow").where("authorDid", "=", did).execute();

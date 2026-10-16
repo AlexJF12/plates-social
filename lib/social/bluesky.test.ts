@@ -1,7 +1,7 @@
 import { type Client, jsonToLex } from "@atproto/lex";
 import { describe, expect, it, vi } from "vitest";
 import { BSKY_POST, COLLECTIONS, SCOPE } from "../config";
-import { cook } from "../lexicons";
+import { cook, visit } from "../lexicons";
 import { bskyPostRecord, createBskyPost, hasBskyPostScope } from "./bluesky";
 
 const ME = "did:plc:testalice00000000000000a";
@@ -54,6 +54,29 @@ describe("bskyPostRecord", () => {
   });
 });
 
+describe("bskyPostRecord for a visit", () => {
+  it("has the restaurant, area, stars and review, and the visit's photos", () => {
+    const visitRecord: visit.Main = visit.$parse(
+      jsonToLex({
+        $type: COLLECTIONS.visit,
+        restaurant: { name: "Lilia", area: "Brooklyn" },
+        rating: 4,
+        review: "Agnolotti.",
+        mealType: "dinner",
+        images: [{ image: { $type: "blob", ref: { $link: CID }, mimeType: "image/jpeg", size: 1234 }, aspectRatio: { width: 3, height: 4 } }],
+        visitedAt: "2026-10-14T20:00:00-04:00",
+        createdAt: "2026-10-15T00:05:00.000Z",
+      }),
+    );
+    const url = `https://cooklog.example/visit/${ME}/${COOK_RKEY}`;
+    const r = bskyPostRecord(visitRecord, url, "2026-10-15T10:00:00.000Z");
+    expect(r.text).toBe(`Lilia, Brooklyn\n★★★★☆\n\nAgnolotti.\n\n${url}`);
+    expect(r.embed.images[0].image).toBe(visitRecord.images[0].image);
+    expect(r.embed.images[0].alt).toBe("");
+    expect(r.facets[0].features[0].uri).toBe(url);
+  });
+});
+
 // A stand-in for the lex Client: only the calls createBskyPost makes.
 function fakeClient(opts: { existing?: boolean; createFails?: boolean; landsAnyway?: boolean }) {
   let stored = opts.existing ?? false;
@@ -76,7 +99,7 @@ function fakeClient(opts: { existing?: boolean; createFails?: boolean; landsAnyw
 describe("createBskyPost", () => {
   it("reads the cook from the PDS and creates the post at the given rkey", async () => {
     const c = fakeClient({});
-    const out = await createBskyPost(c as unknown as Client, ME, COOK_RKEY, POST_RKEY, URL_);
+    const out = await createBskyPost(c as unknown as Client, ME, { kind: "cook", rkey: COOK_RKEY }, POST_RKEY, URL_);
     expect(out).toEqual({
       uri: `at://${ME}/${BSKY_POST}/${POST_RKEY}`,
       url: `https://bsky.app/profile/${ME}/post/${POST_RKEY}`,
@@ -88,19 +111,25 @@ describe("createBskyPost", () => {
     expect(record.text).toContain(URL_);
   });
 
+  it("reads a visit with the visit schema", async () => {
+    const c = fakeClient({});
+    await createBskyPost(c as unknown as Client, ME, { kind: "visit", rkey: COOK_RKEY }, POST_RKEY, URL_);
+    expect(c.get).toHaveBeenCalledWith(visit, { rkey: COOK_RKEY });
+  });
+
   it("a retry with the same rkey doesn't post twice", async () => {
     const c = fakeClient({ existing: true });
-    await createBskyPost(c as unknown as Client, ME, COOK_RKEY, POST_RKEY, URL_);
+    await createBskyPost(c as unknown as Client, ME, { kind: "cook", rkey: COOK_RKEY }, POST_RKEY, URL_);
     expect(c.createRecord).not.toHaveBeenCalled();
   });
 
   it("a lost response whose write landed counts as success", async () => {
     const c = fakeClient({ createFails: true, landsAnyway: true });
-    await expect(createBskyPost(c as unknown as Client, ME, COOK_RKEY, POST_RKEY, URL_)).resolves.toBeTruthy();
+    await expect(createBskyPost(c as unknown as Client, ME, { kind: "cook", rkey: COOK_RKEY }, POST_RKEY, URL_)).resolves.toBeTruthy();
   });
 
   it("a real failure throws", async () => {
     const c = fakeClient({ createFails: true });
-    await expect(createBskyPost(c as unknown as Client, ME, COOK_RKEY, POST_RKEY, URL_)).rejects.toThrow("timeout");
+    await expect(createBskyPost(c as unknown as Client, ME, { kind: "cook", rkey: COOK_RKEY }, POST_RKEY, URL_)).rejects.toThrow("timeout");
   });
 });

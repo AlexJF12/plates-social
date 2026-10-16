@@ -144,7 +144,7 @@ Everything in Postgres except `auth_state`/`auth_session` is a copy of records o
 #    the rebuild arrives through the normal webhook.
 # 2. Dry run: shows the database, row counts and the repos it will re-sync.
 pnpm rebuild-index
-# 3. Do it. Wipes account/cook/kudos/comment/follow, then removes and re-adds
+# 3. Do it. Wipes account/cook/visit/kudos/comment/follow, then removes and re-adds
 #    every repo in Tap, which makes Tap backfill each one from its PDS.
 #    Waits until Tap's outbox is empty and prints row counts before/after.
 pnpm rebuild-index --yes
@@ -153,7 +153,7 @@ pnpm rebuild-index --yes
 - The repos to re-sync are collected from the index tables and `auth_session` before the wipe (Tap has no "list repos" endpoint). If you know of accounts missing from the index, pass their DIDs as extra arguments.
 - Feeds are empty until the backfill lands (seconds locally; longer with many repos).
 - `indexedAt` is reset to the rebuild time. `sortAt` is unchanged for normal records (it's `min(createdAt, indexedAt)`); only future-dated records get re-stamped.
-- If Tap's own state is lost or suspect too: stop Tap, `rm -rf .tap-data`, start it again (it re-discovers every account with a cook via the signal collection), then run `pnpm rebuild-index --yes` so signed-in users without cooks are re-added.
+- If Tap's own state is lost or suspect too: stop Tap, `rm -rf .tap-data`, start it again (it re-discovers every account with a cook via the signal collection), then run `pnpm rebuild-index --yes` so signed-in users without cooks (including people who have only posted visits) are re-added.
 - **Production:** never run this without the human approving the exact command, and take a Neon branch/restore point first (§0.13).
 
 Verified 2026-09-29 locally: a dump of every index column except `indexedAt`/`updatedAt` was byte-identical before and after.

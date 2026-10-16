@@ -1,10 +1,11 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isCidForBytes, parseCidSafe } from "@atproto/lex";
-import { sql } from "kysely";
+import { type Kysely, sql } from "kysely";
 import sharp from "sharp";
 import { getDb } from "../db";
 import { visibleAccount } from "../db/queries";
+import type { DatabaseSchema } from "../db/schema";
 import { resolvePds } from "../pds";
 import type { ImageSize } from "./url";
 
@@ -30,9 +31,13 @@ export const isImageSize = (s: string | null): s is ImageSize =>
 
 // Only CIDs referenced by an indexed record from a visible account may be
 // served; anything else would make this an open proxy. Checked on every
-// request (not only on cache misses), so deleted cooks stop serving.
-export async function isReferenced(did: string, cid: string): Promise<boolean> {
-  const row = await getDb()
+// request (not only on cache misses), so deleted cooks and visits stop serving.
+export async function isReferenced(
+  did: string,
+  cid: string,
+  db: Kysely<DatabaseSchema> = getDb(),
+): Promise<boolean> {
+  const row = await db
     .selectFrom("account")
     .select("did")
     .where("did", "=", did)
@@ -46,6 +51,13 @@ export async function isReferenced(did: string, cid: string): Promise<boolean> {
             .select(sql`1`.as("one"))
             .where("cook.authorDid", "=", did)
             .where(sql<boolean>`cook.images @> ${JSON.stringify([{ cid }])}::jsonb`),
+        ),
+        eb.exists(
+          eb
+            .selectFrom("visit")
+            .select(sql`1`.as("one"))
+            .where("visit.authorDid", "=", did)
+            .where(sql<boolean>`visit.images @> ${JSON.stringify([{ cid }])}::jsonb`),
         ),
       ]),
     )

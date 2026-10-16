@@ -1,4 +1,4 @@
-import { isValidDid, isValidHandle } from "@atproto/syntax";
+import { AtUri, isValidDid, isValidHandle } from "@atproto/syntax";
 import { type Kysely, sql } from "kysely";
 import { COLLECTIONS } from "../config";
 import { type Badge, isCompletedMonth, type Month, monthRange } from "../cook/best";
@@ -202,6 +202,19 @@ export type CommentPage = { items: CommentView[]; cursor: string | null };
 const authorCols = ["account.did", "account.handle", "account.displayName", "account.avatarCid"] as const;
 
 export const cookUriOf = (did: string, rkey: string) => `at://${did}/${COLLECTIONS.cook}/${rkey}`;
+export const visitUriOf = (did: string, rkey: string) => `at://${did}/${COLLECTIONS.visit}/${rkey}`;
+
+export type PostKind = "cook" | "visit";
+
+// Which kind of post an at-uri names (by its collection), or null.
+export function postKindOf(uri: string): PostKind | null {
+  try {
+    const { collection } = new AtUri(uri);
+    return collection === COLLECTIONS.cook ? "cook" : collection === COLLECTIONS.visit ? "visit" : null;
+  } catch {
+    return null;
+  }
+}
 
 // A cook's comments, oldest first, 20 per page (§6.2). Comments on a cook
 // that is gone or hidden aren't shown (§6.2), but their rows are kept: the
@@ -243,17 +256,17 @@ export async function getComments(opts: {
   };
 }
 
-// The visible cook at uri (uri + cid for a strongRef), or null.
-export async function getVisibleCook(uri: string, db: Db = getDb()) {
-  return (
-    (await db
-      .selectFrom("cook")
-      .innerJoin("account", "account.did", "cook.authorDid")
-      .where(visibleAccount("account"))
-      .where("cook.uri", "=", uri)
-      .select(["cook.uri", "cook.cid", "cook.authorDid"])
-      .executeTakeFirst()) ?? null
-  );
+// The visible cook or visit at uri (uri + cid for a strongRef), or null.
+// Kudos and comments can be given on either.
+export async function getVisiblePost(uri: string, db: Db = getDb()) {
+  const kind = postKindOf(uri);
+  if (!kind) return null;
+  const { rows } = await sql<{ uri: string; cid: string; authorDid: string }>`
+    select p.uri, p.cid, p."authorDid" from ${sql.table(kind)} p
+    join account on account.did = p."authorDid"
+    where ${visibleAccount("account")} and p.uri = ${uri}
+  `.execute(db);
+  return rows[0] ? { ...rows[0], kind } : null;
 }
 
 export async function getCookDetail(did: string, rkey: string, db: Db = getDb(), viewer: string | null = null) {

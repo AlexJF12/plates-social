@@ -23,6 +23,7 @@ export const BSKY_POST = "app.bsky.feed.post";
 export const SCOPE = [
   "atproto",
   `repo:${COLLECTIONS.cook}`,
+  `repo:${COLLECTIONS.visit}`,
   `repo:${COLLECTIONS.kudos}`,
   `repo:${COLLECTIONS.comment}`,
   `repo:${COLLECTIONS.follow}`,

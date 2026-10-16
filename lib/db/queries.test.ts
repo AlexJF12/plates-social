@@ -11,7 +11,7 @@ import {
   getFollowUri,
   getImportCandidates,
   getKudosUri,
-  getVisibleCook,
+  getVisiblePost,
   PAGE_SIZE,
 } from "./queries";
 import type { DatabaseSchema } from "./schema";
@@ -257,12 +257,12 @@ describe("orphans (§6.2)", () => {
     await inRollback(async (db) => {
       const subject = await setup(db);
       expect((await getComments({ db, cookUri: subject })).items).toHaveLength(1);
-      expect(await getVisibleCook(subject, db)).not.toBeNull();
+      expect(await getVisiblePost(subject, db)).not.toBeNull();
 
       await db.deleteFrom("cook").where("uri", "=", subject).execute();
       expect(await getCookDetail(ALICE, rkey(0), db)).toBeNull();
       expect((await getComments({ db, cookUri: subject })).items).toEqual([]);
-      expect(await getVisibleCook(subject, db)).toBeNull();
+      expect(await getVisiblePost(subject, db)).toBeNull();
       expect(await rowCounts(db)).toEqual([1, 1]);
       // Bob's own cook still shows its counts untouched.
       expect((await getCookFeed({ db, authorDid: BOB })).items).toHaveLength(1);
@@ -275,7 +275,7 @@ describe("orphans (§6.2)", () => {
       await db.updateTable("account").set({ active: false }).where("did", "=", ALICE).execute();
       expect(await getCookDetail(ALICE, rkey(0), db)).toBeNull();
       expect((await getComments({ db, cookUri: subject })).items).toEqual([]);
-      expect(await getVisibleCook(subject, db)).toBeNull();
+      expect(await getVisiblePost(subject, db)).toBeNull();
       expect(await rowCounts(db)).toEqual([1, 1]);
 
       await db.updateTable("account").set({ active: true }).where("did", "=", ALICE).execute();
@@ -324,7 +324,7 @@ describe("DENYLIST_DIDS (§7)", () => {
         profile: (await getAccount(BOB, db)) !== null,
         byHandle: (await getAccount("bob.test", db)) !== null,
         detail: (await getCookDetail(BOB, rkey(0), db)) !== null,
-        cook: (await getVisibleCook(cookUri(BOB, 0), db)) !== null,
+        cook: (await getVisiblePost(cookUri(BOB, 0), db)) !== null,
         counts: (await getCookFeed({ db, authorDid: ALICE })).items.map((c) => [c.kudosCount, c.commentCount]),
         kudos: (await getCookDetail(ALICE, rkey(0), db))!.kudos.length,
         comments: (await getComments({ cookUri: subjectUri, db })).items.length,

@@ -3,12 +3,13 @@ import { Client } from "@atproto/lex";
 import { isValidTid } from "@atproto/syntax";
 import { getSession } from "@/lib/auth/session";
 import { getDb } from "@/lib/db";
-import { getKudosUri, getVisibleCook } from "@/lib/db/queries";
+import { getKudosUri, getVisiblePost } from "@/lib/db/queries";
 import { readJson } from "@/lib/http";
 import { createKudos, deleteOwnRecord } from "@/lib/social/write";
 
-// POST { cook: uri, rkey: tid } — give kudos (§6.6). Already given → the
-// existing kudos is returned, so a double tap can't create two records.
+// POST { cook: uri, rkey: tid } — give kudos (§6.6). `cook` is the uri of a
+// cook or a visit (the field kept its name). Already given → the existing
+// kudos is returned, so a double tap can't create two records.
 export async function POST(request: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -19,11 +20,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid rkey" }, { status: 400 });
   }
   const db = getDb();
-  // The strongRef needs the cook's cid, and only visible cooks get kudos.
-  const target = typeof body?.cook === "string" ? await getVisibleCook(body.cook, db) : null;
-  if (!target) return NextResponse.json({ error: "Cook not found" }, { status: 404 });
+  // The strongRef needs the post's cid, and only visible posts get kudos.
+  const target = typeof body?.cook === "string" ? await getVisiblePost(body.cook, db) : null;
+  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (target.authorDid === session.did) {
-    return NextResponse.json({ error: "You can't give kudos to your own cook" }, { status: 400 });
+    return NextResponse.json({ error: `You can't give kudos to your own ${target.kind}` }, { status: 400 });
   }
 
   const existing = await getKudosUri(session.did, target.uri, db);
