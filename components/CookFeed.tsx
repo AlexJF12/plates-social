@@ -1,12 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CookView, FeedPage } from "@/lib/db/queries";
+import type { FeedItem, FeedPage } from "@/lib/db/queries";
 import { CookCard } from "./CookCard";
 import { PullToRefresh } from "./PullToRefresh";
+import { VisitCard } from "./VisitCard";
 import { button } from "./ui";
 
-// Infinite scroll over /api/feed (§6.2), or another endpoint that pages the
+// Infinite scroll over /api/feed (§6.2), cooks and visits (Phase 6.8), or another endpoint that pages the
 // same way (`api` + `params`, e.g. /api/search). The first page is rendered
 // on the server (or fetched by the parent) and passed in; later pages load
 // as the sentinel nears the viewport. Pulling down at the top reloads the
@@ -31,7 +32,7 @@ export function CookFeed({
   refreshable?: boolean;
   empty: React.ReactNode;
 }) {
-  const [items, setItems] = useState<CookView[]>(initial.items);
+  const [items, setItems] = useState<FeedItem[]>(initial.items);
   const [cursor, setCursor] = useState(initial.cursor);
   const [state, setState] = useState<"idle" | "loading" | "error">("idle");
   const sentinel = useRef<HTMLDivElement>(null);
@@ -65,7 +66,7 @@ export function CookFeed({
     setState("loading");
     try {
       const page = await fetchPage(cursor);
-      // A cook indexed between page loads can shift items; skip repeats.
+      // A post indexed between page loads can shift items; skip repeats.
       setItems((prev) => {
         const seen = new Set(prev.map((c) => c.uri));
         return [...prev, ...page.items.filter((c) => !seen.has(c.uri))];
@@ -92,9 +93,13 @@ export function CookFeed({
 
   return (
     <Wrap onRefresh={refresh}>
-      {items.map((c) => (
-        <CookCard key={c.uri} cook={c} viewerDid={viewerDid} />
-      ))}
+      {items.map((item) =>
+        item.kind === "visit" ? (
+          <VisitCard key={item.uri} visit={item} viewerDid={viewerDid} />
+        ) : (
+          <CookCard key={item.uri} cook={item} viewerDid={viewerDid} />
+        ),
+      )}
       <div ref={sentinel} className="flex min-h-20 items-center justify-center py-6 text-small text-muted">
         {state === "loading" && "Loading…"}
         {state === "error" && (

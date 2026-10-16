@@ -3,7 +3,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { latestStartedMonth } from "../cook/best";
 import { COLLECTIONS } from "../config";
 import { getDb } from ".";
-import { getAuthorBadges, getBestCooks, getBestOfMonth, getCookDetail, getCookFeed } from "./queries";
+import { getAuthorBadges, getBestCooks, getBestOfMonth, getCookDetail, getFeed } from "./queries";
 import type { DatabaseSchema } from "./schema";
 import { inRollback } from "./testing";
 
@@ -191,9 +191,10 @@ describe("badges", () => {
       await kudos(db, past, B);
       await kudos(db, current, B);
 
-      const feed = (await getCookFeed({ authorDid: A, db })).items;
-      expect(feed.find((c) => c.uri === past)?.badge).toEqual({ mealType: "dinner", month: "2020-03" });
-      expect(feed.find((c) => c.uri === current)?.badge).toBeNull();
+      const feed = (await getFeed({ authorDid: A, db })).items;
+      const badge = (uri: string) => feed.flatMap((c) => (c.kind === "cook" && c.uri === uri ? [c.badge] : []))[0];
+      expect(badge(past)).toEqual({ mealType: "dinner", month: "2020-03" });
+      expect(badge(current)).toBeNull();
       const detail = await getCookDetail(A, past.split("/").pop()!, db);
       expect(detail?.cook.badge).toEqual({ mealType: "dinner", month: "2020-03" });
 
@@ -236,7 +237,19 @@ describe("badges", () => {
         ["snack", snack, 1],
         ["bread", null, 0],
         ["dessert", null, 0],
+        ["drinks", null, 0],
       ]);
+    });
+  });
+
+  it("drinks is a Best category of its own", async () => {
+    await inRollback(async (db) => {
+      await accounts(db, A, B);
+      const drinks = await cook(db, A, "2020-03-10T18:00:00Z", "drinks");
+      await kudos(db, drinks, B);
+      const best = await getBestOfMonth("2020-03", db);
+      expect(best.find((b) => b.mealType === "drinks")?.cook?.uri).toBe(drinks);
+      expect(best.filter((b) => b.cook).map((b) => b.mealType)).toEqual(["drinks"]);
     });
   });
 });

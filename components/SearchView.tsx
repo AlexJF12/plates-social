@@ -104,8 +104,8 @@ export function SearchView({
               value={text}
               onChange={(e) => setText(e.target.value)}
               maxLength={SEARCH_MAX}
-              placeholder="Dishes or people"
-              aria-label="Search dishes and people"
+              placeholder="Dishes, restaurants or people"
+              aria-label="Search dishes, restaurants and people"
               enterKeyHint="search"
               autoCapitalize="none"
               autoCorrect="off"
@@ -146,8 +146,8 @@ export function SearchView({
 
       <main className="mx-auto w-full max-w-md" aria-busy={status === "loading"}>
         {!q ? (
-          <EmptyState title="Find a cook">
-            Search dish names, like &ldquo;carbonara&rdquo;, or people by name or handle.
+          <EmptyState title="Find food and people">
+            Search dish names, like &ldquo;carbonara&rdquo;, restaurants and areas, or people by name or handle.
           </EmptyState>
         ) : status === "error" ? (
           <div className="px-4 py-8 text-center">
@@ -170,7 +170,7 @@ export function SearchView({
               params={params}
               empty={
                 <EmptyState
-                  title={meal ? "No cooks match with this meal" : "No cooks match"}
+                  title={meal ? "Nothing matches with this meal" : "Nothing matches"}
                   actions={
                     meal && (
                       <button type="button" onClick={() => setMeal(null)} className={button({ variant: "secondary" })}>
@@ -179,7 +179,7 @@ export function SearchView({
                     )
                   }
                 >
-                  Try a shorter word or part of the dish name.
+                  Try a shorter word, or part of a dish or restaurant name.
                 </EmptyState>
               }
             />

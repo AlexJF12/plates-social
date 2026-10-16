@@ -6,9 +6,10 @@ import { Avatar } from "@/components/Avatar";
 import { BestBadge } from "@/components/BestBadge";
 import { CookComments } from "@/components/CookComments";
 import { CookKudos } from "@/components/CookKudos";
-import { DeleteCookButton } from "@/components/DeleteCookButton";
+import { DeletePostButton } from "@/components/DeletePostButton";
 import { PageHeader } from "@/components/PageHeader";
-import { ShareCookButton } from "@/components/ShareCookButton";
+import { AuthorLink, FullPhotos } from "@/components/PostParts";
+import { SharePostButton } from "@/components/SharePostButton";
 import { TimeAgo } from "@/components/TimeAgo";
 import { button } from "@/components/ui";
 import { PUBLIC_URL } from "@/lib/auth/client";
@@ -19,6 +20,7 @@ import { mealTypeLabel } from "@/lib/cook/mealTypes";
 import { type Author, getAccount, getCookDetail } from "@/lib/db/queries";
 import { imageUrl } from "@/lib/image/url";
 import { cookPath, displayName, profilePath } from "@/lib/links";
+import { cookShareText } from "@/lib/share";
 
 // One request's worth: generateMetadata and the page both need it. The
 // viewer (or null, signed out) fills cook.viewerKudos.
@@ -68,11 +70,11 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
   const account = await getAccount(viewerDid);
   const viewer = account ?? { did: viewerDid, handle: null, displayName: null, avatarCid: null };
   const share = {
+    kind: "cook" as const,
     uri: cook.uri,
     rkey: cook.rkey,
     authorDid: cook.author.did,
-    dishName: cook.dishName,
-    note: cook.note,
+    text: cookShareText(cook),
     images: cook.images,
   };
 
@@ -82,10 +84,18 @@ export default async function CookPage({ params }: PageProps<"/cook/[did]/[rkey]
         title=""
         back
         action={
-          // DeleteCookButton pulls itself to the edge; otherwise Share does.
+          // DeletePostButton pulls itself to the edge; otherwise Share does.
           <div className={isMine ? "flex items-center" : "-mr-2 flex items-center"}>
-            <ShareCookButton cook={share} canPostToBluesky={isMine} viewerDid={viewerDid} />
-            {isMine && <DeleteCookButton rkey={cook.rkey} afterPath={profilePath(cook.author)} />}
+            <SharePostButton post={share} canPostToBluesky={isMine} viewerDid={viewerDid} />
+            {isMine && (
+              <DeletePostButton
+                kind="cook"
+                rkey={cook.rkey}
+                afterPath={profilePath(cook.author)}
+                viewerDid={viewerDid}
+                herePath={cookPath(cook.author.did, cook.rkey)}
+              />
+            )}
           </div>
         }
       />
@@ -157,21 +167,7 @@ function CookBody({ cook, linkAuthor }: { cook: Cook; linkAuthor: boolean }) {
         </div>
       </header>
 
-      <div className="space-y-1">
-        {cook.images.map((img, i) => (
-          // eslint-disable-next-line @next/next/no-img-element -- already resized by our image proxy
-          <img
-            key={img.cid + i}
-            src={imageUrl(author.did, img.cid, "full")}
-            alt={img.alt ?? ""}
-            width={img.aspectRatio.width}
-            height={img.aspectRatio.height}
-            loading={i === 0 ? "eager" : "lazy"}
-            className="h-auto w-full bg-sunken"
-            style={{ aspectRatio: `${img.aspectRatio.width} / ${img.aspectRatio.height}` }}
-          />
-        ))}
-      </div>
+      <FullPhotos did={author.did} images={cook.images} />
 
       <section className="px-4 pt-5 pb-6">
         {cook.badge && <BestBadge badge={cook.badge} className="mb-2" />}
@@ -180,18 +176,5 @@ function CookBody({ cook, linkAuthor }: { cook: Cook; linkAuthor: boolean }) {
         {cook.note && <p className="mt-4 text-lead break-words whitespace-pre-line">{cook.note}</p>}
       </section>
     </>
-  );
-}
-
-function AuthorLink({ author, className, children }: {
-  author: Author | null;
-  className: string;
-  children: React.ReactNode;
-}) {
-  if (!author) return <span className={className}>{children}</span>;
-  return (
-    <Link href={profilePath(author)} className={className}>
-      {children}
-    </Link>
   );
 }

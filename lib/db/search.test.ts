@@ -3,7 +3,7 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { COLLECTIONS } from "../config";
 import { normalizeMeal, normalizeQuery } from "../search";
 import { getDb } from ".";
-import { PAGE_SIZE, searchCooks, searchPeople } from "./queries";
+import { PAGE_SIZE, searchPosts, searchPeople } from "./queries";
 import type { DatabaseSchema } from "./schema";
 import { inRollback } from "./testing";
 
@@ -53,9 +53,9 @@ async function setup(db: Db) {
 }
 
 const dishes = async (db: Db, q: string, mealType?: string) =>
-  (await searchCooks({ q, mealType, db })).items.map((c) => c.dishName);
+  (await searchPosts({ q, mealType, db })).items.map((c) => (c.kind === "cook" ? c.dishName : c.restaurantName));
 
-describe("searchCooks", () => {
+describe("searchPosts", () => {
   it("matches substrings, any case, accents either way", async () => {
     await inRollback(async (db) => {
       await setup(db);
@@ -105,7 +105,7 @@ describe("searchCooks", () => {
       let cursor: string | null = null;
       const sizes: number[] = [];
       do {
-        const page = await searchCooks({ q: "zq dish", cursor, db });
+        const page = await searchPosts({ q: "zq dish", cursor, db });
         sizes.push(page.items.length);
         seen.push(...page.items.map((c) => c.uri));
         cursor = page.cursor;

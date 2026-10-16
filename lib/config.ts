@@ -8,6 +8,7 @@ export const APP_NAME = "Cooklog";
 
 export const COLLECTIONS = {
   cook: `${NS}.cook`,
+  visit: `${NS}.visit`,
   kudos: `${NS}.kudos`,
   comment: `${NS}.comment`,
   follow: `${NS}.follow`,
@@ -22,6 +23,7 @@ export const BSKY_POST = "app.bsky.feed.post";
 export const SCOPE = [
   "atproto",
   `repo:${COLLECTIONS.cook}`,
+  `repo:${COLLECTIONS.visit}`,
   `repo:${COLLECTIONS.kudos}`,
   `repo:${COLLECTIONS.comment}`,
   `repo:${COLLECTIONS.follow}`,

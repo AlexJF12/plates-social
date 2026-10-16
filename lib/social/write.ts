@@ -6,7 +6,7 @@ import type { DatabaseSchema } from "../db/schema";
 import { ensureAccount } from "../indexer/account";
 import { commentRow, upsertComment } from "../indexer/comment";
 import { kudosRow, upsertKudos } from "../indexer/kudos";
-import { comment, cook, kudos } from "../lexicons";
+import { comment, cook, kudos, visit } from "../lexicons";
 
 type Db = Kysely<DatabaseSchema>;
 type StrongRef = { uri: string; cid: string };
@@ -71,10 +71,12 @@ export async function createComment(client: Client, db: Db, me: string, record: 
 // record that is already gone succeeds, so a retry after a lost response is
 // harmless. Kudos and comments other people left on a deleted cook stay in
 // the index (they're their records), hidden by the read queries (§6.2).
-export async function deleteOwnRecord(client: Client, db: Db, kind: "kudos" | "comment" | "cook", uri: string) {
+// The same goes for visits.
+export async function deleteOwnRecord(client: Client, db: Db, kind: "kudos" | "comment" | "cook" | "visit", uri: string) {
   const rkey = new AtUri(uri).rkey;
   if (kind === "kudos") await client.delete(kudos, { rkey });
   else if (kind === "comment") await client.delete(comment, { rkey });
+  else if (kind === "visit") await client.delete(visit, { rkey });
   else await client.delete(cook, { rkey });
   await db.deleteFrom(kind).where("uri", "=", uri).execute();
 }

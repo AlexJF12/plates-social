@@ -4,12 +4,12 @@ import { isValidTid } from "@atproto/syntax";
 import { getSession } from "@/lib/auth/session";
 import { COLLECTIONS } from "@/lib/config";
 import { getDb } from "@/lib/db";
-import { type CommentView, getAccount, getComments, getVisibleCook } from "@/lib/db/queries";
+import { type CommentView, getAccount, getComments, getVisiblePost } from "@/lib/db/queries";
 import { isOwnRecordUri, readJson } from "@/lib/http";
 import { commentRecord, createComment, deleteOwnRecord } from "@/lib/social/write";
 
-// GET /api/comment?cook=uri&cursor=… — next page of a cook's comments.
-// Public index data, like /api/feed.
+// GET /api/comment?cook=uri&cursor=… — next page of a cook's or a visit's
+// comments (`cook` is either uri). Public index data, like /api/feed.
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const cookUri = params.get("cook");
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(page, { headers: { "Cache-Control": "no-store" } });
 }
 
-// POST { cook: uri, text, rkey: tid } — comment on a visible cook. Returns
+// POST { cook: uri, text, rkey: tid } — comment on a visible cook or visit. Returns
 // the new comment so the page can show it straight away.
 export async function POST(request: NextRequest) {
   const session = await getSession();
@@ -30,8 +30,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid rkey" }, { status: 400 });
   }
   const db = getDb();
-  const target = typeof body?.cook === "string" ? await getVisibleCook(body.cook, db) : null;
-  if (!target) return NextResponse.json({ error: "Cook not found" }, { status: 404 });
+  const target = typeof body?.cook === "string" ? await getVisiblePost(body.cook, db) : null;
+  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   // Enforce every §4 limit before anything reaches the PDS.
   let record;

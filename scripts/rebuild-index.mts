@@ -15,7 +15,7 @@ import { Tap, formatAdminAuthHeader } from "@atproto/tap";
 import { sql } from "kysely";
 import { getDb } from "../lib/db/index";
 
-const INDEX_TABLES = ["account", "cook", "kudos", "comment", "follow"] as const;
+const INDEX_TABLES = ["account", "cook", "visit", "kudos", "comment", "follow"] as const;
 const BATCH = 100;
 const TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -51,7 +51,7 @@ async function collectDids(): Promise<string[]> {
   const add = (rows: { d: string }[]) => rows.forEach((r) => dids.add(r.d));
   add(await db.selectFrom("account").select("did as d").execute());
   add(await db.selectFrom("auth_session").select("key as d").execute());
-  for (const t of ["cook", "kudos", "comment", "follow"] as const) {
+  for (const t of ["cook", "visit", "kudos", "comment", "follow"] as const) {
     add(await db.selectFrom(t).select("authorDid as d").distinct().execute());
   }
   return [...dids].filter((d) => d.startsWith("did:")).sort();

@@ -12,10 +12,10 @@ import { getDid } from "@/lib/auth/session";
 import { formatMonth } from "@/lib/cook/best";
 import { mealTypeLabel } from "@/lib/cook/mealTypes";
 import { statsWindow } from "@/lib/cook/stats";
-import { getAccount, getAuthorBadges, getCookDayCounts, getCookFeed, getFollowUri } from "@/lib/db/queries";
+import { getAccount, getAuthorBadges, getCookDayCounts, getFeed, getFollowUri, getVisitDayCounts } from "@/lib/db/queries";
 import { cookPath, displayName } from "@/lib/links";
 
-// A person's stats and cooks, newest first. [actor] is a handle or a DID.
+// A person's stats, and their cooks and visits, newest first. [actor] is a handle or a DID.
 // Others get a follow button; your own has the Bluesky import and sign-out.
 export default async function ProfilePage({ params }: PageProps<"/profile/[actor]">) {
   const viewer = await getDid();
@@ -23,9 +23,11 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
   const account = await getAccount(decodeURIComponent((await params).actor));
   if (!account) notFound();
   const isMe = account.did === viewer;
-  const [initial, days, followUri, wins] = await Promise.all([
-    getCookFeed({ authorDid: account.did, viewer }),
-    getCookDayCounts(account.did, statsWindow()),
+  const range = statsWindow();
+  const [initial, days, visitDays, followUri, wins] = await Promise.all([
+    getFeed({ authorDid: account.did, viewer }),
+    getCookDayCounts(account.did, range),
+    getVisitDayCounts(account.did, range),
     isMe ? null : getFollowUri(viewer, account.did),
     getAuthorBadges(account.did),
   ]);
@@ -43,7 +45,7 @@ export default async function ProfilePage({ params }: PageProps<"/profile/[actor
             <p className="mt-1 truncate text-small text-muted">{account.handle ? `@${account.handle}` : account.did}</p>
           </div>
         </section>
-        <ProfileStats days={days} />
+        <ProfileStats days={days} visitDays={visitDays} />
         {wins.length > 0 && (
           <section aria-labelledby="best-cooks" className="px-4 pb-5" data-testid="best-cooks">
             <h2 id="best-cooks" className="mb-2 text-small font-semibold text-muted">

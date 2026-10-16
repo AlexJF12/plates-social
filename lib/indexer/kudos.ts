@@ -5,7 +5,7 @@ import type { kudos } from "../lexicons";
 // createdAt is always set, so the keep-the-earliest comparison has a value.
 export type KudosRow = Insertable<KudosTable> & { createdAt: Date };
 
-// The record must already have passed kudos.$parse and the cook-subject check
+// The record must already have passed kudos.$parse and the cook-or-visit subject check
 // in ./index.ts.
 export function kudosRow(args: {
   uri: string;
@@ -21,7 +21,7 @@ export function kudosRow(args: {
   };
 }
 
-// One kudos per (author, cook); if duplicates arrive, the earliest wins
+// One kudos per (author, cook or visit); if duplicates arrive, the earliest wins
 // (§6.2). Idempotent, and written as single statements rather than a
 // transaction so callers (and tests) can run it inside their own.
 export async function upsertKudos(

@@ -7,7 +7,7 @@ test("Best: winners per meal, month limits, badges", async ({ page }) => {
   await page.goto(`/best/${BEST_MONTH}`);
   await expect(page.getByRole("heading", { name: "June 2025" })).toBeVisible();
   const rows = page.getByTestId("best-row");
-  await expect(rows).toHaveCount(6);
+  await expect(rows).toHaveCount(7); // the 7 known meal types, drinks last
   await expect(rows.nth(0)).toContainText("Ginger congee");
   await expect(rows.nth(1)).toContainText("No winner yet"); // lunch: Miso soup has no kudos
   await expect(rows.nth(2)).toContainText("Braised short ribs");
@@ -34,7 +34,7 @@ test("Best: winners per meal, month limits, badges", async ({ page }) => {
 
 test("Search: dishes, people, meal chips, paging, Back keeps the query", async ({ page }) => {
   await page.goto("/search");
-  await expect(page.getByRole("heading", { name: "Find a cook" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Find food and people" })).toBeVisible();
   const box = page.getByRole("searchbox");
 
   await box.fill("galette");
@@ -46,7 +46,7 @@ test("Search: dishes, people, meal chips, paging, Back keeps the query", async (
 
   await box.fill("galette");
   await page.getByRole("button", { name: "Dinner" }).click();
-  await expect(page.getByRole("heading", { name: "No cooks match with this meal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nothing matches with this meal" })).toBeVisible();
   await page.getByRole("button", { name: "Search all meals" }).click();
   await expect(page.getByTestId("cook-card")).toHaveCount(7);
 

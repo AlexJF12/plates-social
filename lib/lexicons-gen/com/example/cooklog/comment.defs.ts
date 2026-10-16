@@ -11,12 +11,12 @@ type $nsid = typeof $nsid
 
 export { $nsid }
 
-/** A comment on a cook. Comments are flat, not threaded. */
+/** A comment on a cook or a visit. Comments are flat, not threaded. */
 type Main = {
   $type: 'com.example.cooklog.comment'
 
   /**
-   * The cook record being commented on.
+   * The cook or visit record being commented on.
    */
   subject: RepoStrongRef.Main
   text: string
@@ -25,7 +25,7 @@ type Main = {
 
 export type { Main }
 
-/** A comment on a cook. Comments are flat, not threaded. */
+/** A comment on a cook or a visit. Comments are flat, not threaded. */
 const main = /*#__PURE__*/ l.record<'tid', Main>(
   'tid',
   $nsid,

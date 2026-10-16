@@ -38,7 +38,7 @@ In this mode the app is an atproto *loopback* OAuth client: no keys and no hoste
 
 `scripts/tap.sh` runs Tap with:
 
-- `--signal-collection=<NS>.cook` — auto-discover every account that has posted a cook
+- `--signal-collection=<NS>.cook` — auto-discover every account that has posted a cook. Tap takes only one signal collection, so an account that has only posted visits is found when it signs in here (login calls `/repos/add`), not before.
 - `--collection-filters=<NS>.*,app.bsky.actor.profile` — only deliver our records and profiles
 - `--admin-password` — required on every Tap request, and on Tap's webhook calls to us
 - SQLite state in `.tap-data/` (delete it to make Tap forget everything)
@@ -112,7 +112,7 @@ pnpm test:e2e     # Playwright at 375px; needs pnpm dev running. Screenshots in 
 
 `e2e/signed-in/` covers the signed-in screens (feeds, card kudos, pull to refresh, cook page, comments, delete dialogs, log, profile, Best, search, not-found). It needs `pnpm dev` running, the local Postgres (`pnpm db:up`), and `DATABASE_URL` + `SESSION_SECRET` in `.env.local`. Without those it skips (with a message) and the signed-out tests still run.
 
-- **Fixtures:** `e2e/global-setup.ts` inserts local-only rows (`e2e/support/fixtures.ts`): five accounts whose DIDs start with `did:plc:e2e`, 31 cooks, kudos, comments and a follow, every record rkey starting `3mwe2e`. Their photos and avatars are emoji images rendered with Chromium and written into `.cache/img/` under their CIDs. `e2e/global-teardown.ts` deletes all of it, and setup first deletes leftovers from a killed run.
+- **Fixtures:** `e2e/global-setup.ts` inserts local-only rows (`e2e/support/fixtures.ts`): five accounts whose DIDs start with `did:plc:e2e`, 31 cooks, 3 visits, kudos, comments and a follow, every record rkey starting `3mwe2e`. Their photos and avatars are emoji images rendered with Chromium and written into `.cache/img/` under their CIDs. `e2e/global-teardown.ts` deletes all of it, and setup first deletes leftovers from a killed run.
 - **Signing in:** each test mints a session cookie for a fixture DID from `SESSION_SECRET`, in the test process only. Never your own DID.
 - **No writes leave the machine:** every POST/DELETE to `/api/kudos`, `/api/comment`, `/api/cook`, `/api/blob`, `/api/follow` and `/api/share/bluesky` must be stubbed by the test (`stubWrite` in `e2e/support/signedIn.ts`); anything unstubbed is aborted and fails the test.
 - **Cleaning up by hand** (if a run was killed and you won't run the suite again soon):
@@ -144,7 +144,7 @@ Everything in Postgres except `auth_state`/`auth_session` is a copy of records o
 #    the rebuild arrives through the normal webhook.
 # 2. Dry run: shows the database, row counts and the repos it will re-sync.
 pnpm rebuild-index
-# 3. Do it. Wipes account/cook/kudos/comment/follow, then removes and re-adds
+# 3. Do it. Wipes account/cook/visit/kudos/comment/follow, then removes and re-adds
 #    every repo in Tap, which makes Tap backfill each one from its PDS.
 #    Waits until Tap's outbox is empty and prints row counts before/after.
 pnpm rebuild-index --yes
@@ -153,7 +153,7 @@ pnpm rebuild-index --yes
 - The repos to re-sync are collected from the index tables and `auth_session` before the wipe (Tap has no "list repos" endpoint). If you know of accounts missing from the index, pass their DIDs as extra arguments.
 - Feeds are empty until the backfill lands (seconds locally; longer with many repos).
 - `indexedAt` is reset to the rebuild time. `sortAt` is unchanged for normal records (it's `min(createdAt, indexedAt)`); only future-dated records get re-stamped.
-- If Tap's own state is lost or suspect too: stop Tap, `rm -rf .tap-data`, start it again (it re-discovers every account with a cook via the signal collection), then run `pnpm rebuild-index --yes` so signed-in users without cooks are re-added.
+- If Tap's own state is lost or suspect too: stop Tap, `rm -rf .tap-data`, start it again (it re-discovers every account with a cook via the signal collection), then run `pnpm rebuild-index --yes` so signed-in users without cooks (including people who have only posted visits) are re-added.
 - **Production:** never run this without the human approving the exact command, and take a Neon branch/restore point first (§0.13).
 
 Verified 2026-09-29 locally: a dump of every index column except `indexedAt`/`updatedAt` was byte-identical before and after.

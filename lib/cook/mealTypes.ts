@@ -1,5 +1,5 @@
-// knownValues from cook.json. Records may carry other values (§4): show
-// them as "Other", never reject them.
+// knownValues from cook.json and visit.json. Records may carry other values
+// (§4): show them as "Other", never reject them.
 export const MEAL_TYPES = [
   { value: "breakfast", label: "Breakfast" },
   { value: "lunch", label: "Lunch" },
@@ -7,6 +7,7 @@ export const MEAL_TYPES = [
   { value: "snack", label: "Snack" },
   { value: "bread", label: "Bread" },
   { value: "dessert", label: "Dessert" },
+  { value: "drinks", label: "Drinks" },
 ] as const;
 
 export function mealTypeLabel(value: string): string {

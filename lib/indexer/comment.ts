@@ -2,7 +2,7 @@ import type { Insertable, Kysely } from "kysely";
 import type { CommentTable, DatabaseSchema } from "../db/schema";
 import type { comment } from "../lexicons";
 
-// The record must already have passed comment.$parse and the cook-subject check
+// The record must already have passed comment.$parse and the cook-or-visit subject check
 // in ./index.ts.
 export function commentRow(args: {
   uri: string;

@@ -4,12 +4,13 @@ import { AtUri, isValidTid } from "@atproto/syntax";
 import type { Kysely } from "kysely";
 import { COLLECTIONS } from "../config";
 import type { DatabaseSchema } from "../db/schema";
-import { bskyProfile, comment, cook, follow, kudos } from "../lexicons";
+import { bskyProfile, comment, cook, follow, kudos, visit } from "../lexicons";
 import { ensureAccount, purgeAccount, upsertIdentity, upsertProfile } from "./account";
 import { commentRow, upsertComment } from "./comment";
 import { cookRow, upsertCook } from "./cook";
 import { followRow, upsertFollow } from "./follow";
 import { kudosRow, upsertKudos } from "./kudos";
+import { upsertVisit, visitRow } from "./visit";
 
 const PROFILE = "app.bsky.actor.profile";
 
@@ -19,6 +20,7 @@ export type IndexOutcome =
 
 const TABLE_FOR = {
   [COLLECTIONS.cook]: "cook",
+  [COLLECTIONS.visit]: "visit",
   [COLLECTIONS.kudos]: "kudos",
   [COLLECTIONS.comment]: "comment",
   [COLLECTIONS.follow]: "follow",
@@ -26,11 +28,12 @@ const TABLE_FOR = {
 type OurCollection = keyof typeof TABLE_FOR;
 const isOurCollection = (c: string): c is OurCollection => c in TABLE_FOR;
 
-// Kudos and comments must point at a cook (§4). The Lexicon only says
-// "strongRef", so check the collection here.
-function isCookUri(uri: string): boolean {
+// Kudos and comments must point at a cook or a visit (§4). The Lexicon only
+// says "strongRef", so check the collection here.
+export function isPostUri(uri: string): boolean {
   try {
-    return new AtUri(uri).collection === COLLECTIONS.cook;
+    const { collection } = new AtUri(uri);
+    return collection === COLLECTIONS.cook || collection === COLLECTIONS.visit;
   } catch {
     return false;
   }
@@ -90,11 +93,18 @@ export async function indexEvent(
       await upsertCook(db, cookRow({ uri, cid, authorDid: did, record: record.value, indexedAt: now }));
       break;
     }
+    case COLLECTIONS.visit: {
+      const record = parse(visit, evt.record);
+      if (!record.ok) return record.dropped;
+      await ensureAccount(db, did);
+      await upsertVisit(db, visitRow({ uri, cid, authorDid: did, record: record.value, indexedAt: now }));
+      break;
+    }
     case COLLECTIONS.kudos: {
       const record = parse(kudos, evt.record);
       if (!record.ok) return record.dropped;
-      if (!isCookUri(record.value.subject.uri)) {
-        return { kind: "dropped", reason: "subject is not a cook" };
+      if (!isPostUri(record.value.subject.uri)) {
+        return { kind: "dropped", reason: "subject is not a cook or a visit" };
       }
       await ensureAccount(db, did);
       await upsertKudos(db, kudosRow({ uri, authorDid: did, record: record.value }));
@@ -103,8 +113,8 @@ export async function indexEvent(
     case COLLECTIONS.comment: {
       const record = parse(comment, evt.record);
       if (!record.ok) return record.dropped;
-      if (!isCookUri(record.value.subject.uri)) {
-        return { kind: "dropped", reason: "subject is not a cook" };
+      if (!isPostUri(record.value.subject.uri)) {
+        return { kind: "dropped", reason: "subject is not a cook or a visit" };
       }
       await ensureAccount(db, did);
       await upsertComment(db, commentRow({ uri, authorDid: did, record: record.value, indexedAt: now }));

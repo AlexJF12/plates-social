@@ -1,0 +1,77 @@
+{
+  "lexicon": 1,
+  "id": "com.example.cooklog.visit",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A meal the author ate at a restaurant, with photos and a review.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["restaurant", "rating", "mealType", "images", "visitedAt", "createdAt"],
+        "properties": {
+          "restaurant": {
+            "type": "ref",
+            "ref": "#restaurant",
+            "description": "Where the meal was eaten."
+          },
+          "rating": {
+            "type": "integer",
+            "description": "Star rating, from 1 (worst) to 5 (best).",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "review": {
+            "type": "string",
+            "description": "Optional free-text review.",
+            "maxGraphemes": 1000,
+            "maxLength": 10000
+          },
+          "mealType": {
+            "type": "string",
+            "description": "Kind of meal. Clients should display unrecognised values as 'Other'.",
+            "knownValues": ["breakfast", "lunch", "dinner", "snack", "bread", "dessert", "drinks"],
+            "maxLength": 64
+          },
+          "images": {
+            "type": "array",
+            "description": "Photos of the meal, in display order.",
+            "minLength": 1,
+            "maxLength": 4,
+            "items": { "type": "ref", "ref": "com.example.cooklog.cook#image" }
+          },
+          "visitedAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When the meal was eaten, in the author's local time with its UTC offset."
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "datetime",
+            "description": "When this record was created."
+          }
+        }
+      }
+    },
+    "restaurant": {
+      "type": "object",
+      "description": "A restaurant, as free text. There is no place identifier, so two reviews of the same place are not linked.",
+      "required": ["name"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the restaurant.",
+          "minGraphemes": 1,
+          "maxGraphemes": 100,
+          "maxLength": 1000
+        },
+        "area": {
+          "type": "string",
+          "description": "Optional neighbourhood or city, e.g. 'Brooklyn'.",
+          "maxGraphemes": 100,
+          "maxLength": 1000
+        }
+      }
+    }
+  }
+}

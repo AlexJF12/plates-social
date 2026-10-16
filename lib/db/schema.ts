@@ -9,6 +9,7 @@ export interface DatabaseSchema {
   login: LoginTable;
   account: AccountTable;
   cook: CookTable;
+  visit: VisitTable;
   kudos: KudosTable;
   comment: CommentTable;
   follow: FollowTable;
@@ -68,6 +69,25 @@ export interface CookTable {
   cookedAt: string;
   cookedAtUtc: Timestamp;
   cookedLocalDate: DateString;
+  createdAt: Timestamp;
+  indexedAt: Timestamp;
+  sortAt: Timestamp;
+}
+
+// A meal eaten out (NS.visit, Phase 6.8). Images use the cook's shape.
+export interface VisitTable {
+  uri: string;
+  cid: string;
+  authorDid: string;
+  restaurantName: string;
+  restaurantArea: string | null;
+  rating: number;
+  review: string | null;
+  mealType: string;
+  images: ColumnType<CookImage[], string, string>;
+  visitedAt: string;
+  visitedAtUtc: Timestamp;
+  visitedLocalDate: DateString;
   createdAt: Timestamp;
   indexedAt: Timestamp;
   sortAt: Timestamp;

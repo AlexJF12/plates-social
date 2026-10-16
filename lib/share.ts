@@ -1,7 +1,7 @@
-import { cookPath } from "./links";
+import { cookPath, visitPath } from "./links";
 
-// Sharing a cook outside the app: as a Bluesky post, or as a message (text
-// share sheet). Client-safe: no server imports.
+// Sharing a cook or a visit outside the app: as a Bluesky post, or as a
+// message (text share sheet). Client-safe: no server imports.
 
 // Bluesky's app.bsky.feed.post text limit.
 export const BSKY_POST_MAX_GRAPHEMES = 300;
@@ -13,11 +13,35 @@ const utf8Length = (s: string) => new TextEncoder().encode(s).length;
 export const cookShareUrl = (origin: string, did: string, rkey: string) =>
   new URL(cookPath(did, rkey), origin).toString();
 
-type ShareCook = { dishName: string; note: string | null };
+export const visitShareUrl = (origin: string, did: string, rkey: string) =>
+  new URL(visitPath(did, rkey), origin).toString();
 
-// The message body for a text share: dish, then the full note, then the link.
-export function messageText(cook: ShareCook, url: string) {
-  return [cook.dishName, cook.note?.trim(), url].filter(Boolean).join("\n\n");
+// What a share says: a title that's always kept whole, and a body that may
+// be cut to fit.
+export type ShareText = { title: string; body: string | null };
+
+export const cookShareText = (cook: { dishName: string; note: string | null }): ShareText => ({
+  title: cook.dishName.trim(),
+  body: cook.note,
+});
+
+// "★★★★☆" for 4 out of 5.
+export const starsText = (rating: number) => "★".repeat(rating) + "☆".repeat(5 - rating);
+
+// "Lilia, Brooklyn" then the stars on the next line, then the review.
+export const visitShareText = (visit: {
+  restaurantName: string;
+  restaurantArea: string | null;
+  rating: number;
+  review: string | null;
+}): ShareText => ({
+  title: `${[visit.restaurantName.trim(), visit.restaurantArea?.trim()].filter(Boolean).join(", ")}\n${starsText(visit.rating)}`,
+  body: visit.review,
+});
+
+// The message body for a text share: title, then the full body, then the link.
+export function messageText(share: ShareText, url: string) {
+  return [share.title, share.body?.trim(), url].filter(Boolean).join("\n\n");
 }
 
 export type LinkFacet = {
@@ -25,16 +49,17 @@ export type LinkFacet = {
   features: { $type: "app.bsky.richtext.facet#link"; uri: string }[];
 };
 
-// Dish, note and link in ≤ 300 graphemes. The note is cut (with "…") to fit;
-// the dish name (≤ 100 graphemes) and the link are always kept whole. The
-// link gets a facet (byte offsets into the UTF-8 text) so it's tappable.
-export function blueskyPostText(cook: ShareCook, url: string): { text: string; facets: LinkFacet[] } {
-  const head = cook.dishName.trim();
+// Title, body and link in ≤ 300 graphemes. The body is cut (with "…") to
+// fit; the title (a dish name, or a restaurant, area and stars: ≤ 208
+// graphemes) and the link are always kept whole. The link gets a facet
+// (byte offsets into the UTF-8 text) so it's tappable.
+export function blueskyPostText(share: ShareText, url: string): { text: string; facets: LinkFacet[] } {
+  const head = share.title;
   const tail = `\n\n${url}`;
   const room = BSKY_POST_MAX_GRAPHEMES - graphemes(head).length - graphemes(tail).length;
 
   let body = "";
-  const note = cook.note?.trim();
+  const note = share.body?.trim();
   // A note needs at least "\n\n" plus one grapheme and the ellipsis to be worth adding.
   if (note && room >= 4) {
     const parts = graphemes(note);

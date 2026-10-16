@@ -1,4 +1,4 @@
-import { isValidDid, isValidHandle } from "@atproto/syntax";
+import { AtUri, isValidDid, isValidHandle } from "@atproto/syntax";
 import { type Kysely, sql } from "kysely";
 import { COLLECTIONS } from "../config";
 import { type Badge, isCompletedMonth, type Month, monthRange } from "../cook/best";
@@ -47,7 +47,31 @@ export type CookView = {
   viewerKudos: boolean;
 };
 
-export type FeedPage = { items: CookView[]; cursor: string | null };
+// A meal eaten out (Phase 6.8). Only the date it was eaten, never the time
+// (`visitedAt` stays on the PDS): a visit posted at the table shouldn't tell
+// the feed where its author is right now.
+export type VisitView = {
+  uri: string;
+  rkey: string;
+  author: Author;
+  restaurantName: string;
+  restaurantArea: string | null;
+  rating: number;
+  review: string | null;
+  mealType: string;
+  images: CookImage[];
+  // 'YYYY-MM-DD' in the author's own offset.
+  visitedLocalDate: string;
+  sortAt: string;
+  kudosCount: number;
+  commentCount: number;
+  viewerKudos: boolean;
+};
+
+// One card in a feed: a cook or a visit.
+export type FeedItem = ({ kind: "cook" } & CookView) | ({ kind: "visit" } & VisitView);
+
+export type FeedPage = { items: FeedItem[]; cursor: string | null };
 
 // Cursor = sortAt + uri of the last item (§6.2). The ISO date has no "~".
 const encodeCursor = (c: { sortAt: string; uri: string }) => `${c.sortAt}~${c.uri}`;
@@ -61,14 +85,31 @@ function decodeCursor(cursor: string): { sortAt: Date; uri: string } | null {
 
 const rkeyOf = (uri: string) => uri.slice(uri.lastIndexOf("/") + 1);
 
-// Every cook read goes through here. `viewer` (a DID, or null) fills
-// viewerKudos in the same query: an exists subquery, not a request per card.
+// Kudos count, comment count and the viewer's kudos for the post whose uri
+// column is `uriRef` (counting visible authors only), as select columns.
+// `viewer` (a DID, or null) fills viewerKudos in the same query: an exists
+// subquery, not a request per card.
+function postCounts(viewer: string | null, uriRef: "cook.uri" | "visit.uri") {
+  const uri = sql.ref(uriRef);
+  return [
+    sql<number>`(select count(*)::int from kudos join account ka on ka.did = kudos."authorDid"
+      where ${visibleAccount("ka")} and kudos."subjectUri" = ${uri})`.as("kudosCount"),
+    sql<number>`(select count(*)::int from comment join account ca on ca.did = comment."authorDid"
+      where ${visibleAccount("ca")} and comment."subjectUri" = ${uri})`.as("commentCount"),
+    viewer
+      ? sql<boolean>`exists (select 1 from kudos join account va on va.did = kudos."authorDid"
+          where ${visibleAccount("va")} and kudos."authorDid" = ${viewer} and kudos."subjectUri" = ${uri})`.as("viewerKudos")
+      : sql<boolean>`false`.as("viewerKudos"),
+  ] as const;
+}
+
+// Every cook read goes through here.
 function cookQuery(db: Db, viewer: string | null = null) {
   return db
     .selectFrom("cook")
     .innerJoin("account", "account.did", "cook.authorDid")
     .where(visibleAccount("account"))
-    .select((eb) => [
+    .select([
       "cook.uri",
       "cook.dishName",
       "cook.mealType",
@@ -80,33 +121,31 @@ function cookQuery(db: Db, viewer: string | null = null) {
       "account.handle",
       "account.displayName",
       "account.avatarCid",
-      eb
-        .selectFrom("kudos")
-        .innerJoin("account as ka", "ka.did", "kudos.authorDid")
-        .where(visibleAccount("ka"))
-        .whereRef("kudos.subjectUri", "=", "cook.uri")
-        .select(sql<number>`count(*)::int`.as("n"))
-        .as("kudosCount"),
-      eb
-        .selectFrom("comment")
-        .innerJoin("account as ca", "ca.did", "comment.authorDid")
-        .where(visibleAccount("ca"))
-        .whereRef("comment.subjectUri", "=", "cook.uri")
-        .select(sql<number>`count(*)::int`.as("n"))
-        .as("commentCount"),
-      viewer
-        ? eb
-            .exists(
-              eb
-                .selectFrom("kudos")
-                .innerJoin("account as va", "va.did", "kudos.authorDid")
-                .where(visibleAccount("va"))
-                .where("kudos.authorDid", "=", viewer)
-                .whereRef("kudos.subjectUri", "=", "cook.uri")
-                .select(sql`1`.as("one")),
-            )
-            .as("viewerKudos")
-        : sql<boolean>`false`.as("viewerKudos"),
+      ...postCounts(viewer, "cook.uri"),
+    ]);
+}
+
+// Every visit read goes through here. No visitedAt: see VisitView.
+function visitQuery(db: Db, viewer: string | null = null) {
+  return db
+    .selectFrom("visit")
+    .innerJoin("account", "account.did", "visit.authorDid")
+    .where(visibleAccount("account"))
+    .select([
+      "visit.uri",
+      "visit.restaurantName",
+      "visit.restaurantArea",
+      "visit.rating",
+      "visit.review",
+      "visit.mealType",
+      "visit.images",
+      "visit.visitedLocalDate",
+      "visit.sortAt",
+      "account.did",
+      "account.handle",
+      "account.displayName",
+      "account.avatarCid",
+      ...postCounts(viewer, "visit.uri"),
     ]);
 }
 
@@ -128,28 +167,100 @@ const toView = (r: CookRow): CookView => ({
   viewerKudos: Boolean(r.viewerKudos),
 });
 
-// Newest first, PAGE_SIZE at a time, by the (sortAt, uri) cursor, with
-// badges looked up for the whole page in one query.
-async function cookPage(db: Db, q: ReturnType<typeof cookQuery>, cursor?: string | null): Promise<FeedPage> {
-  q = q.orderBy("cook.sortAt", "desc").orderBy("cook.uri", "desc").limit(PAGE_SIZE + 1);
-  const after = cursor ? decodeCursor(cursor) : null;
-  if (after) {
-    q = q.where((eb) =>
-      eb(eb.refTuple("cook.sortAt", "cook.uri"), "<", eb.tuple(after.sortAt, after.uri)),
-    );
+type VisitRow = Awaited<ReturnType<ReturnType<typeof visitQuery>["executeTakeFirstOrThrow"]>>;
+
+const toVisitView = (r: VisitRow): VisitView => ({
+  uri: r.uri,
+  rkey: rkeyOf(r.uri),
+  author: { did: r.did, handle: r.handle, displayName: r.displayName, avatarCid: r.avatarCid },
+  restaurantName: r.restaurantName,
+  restaurantArea: r.restaurantArea,
+  rating: r.rating,
+  review: r.review,
+  mealType: r.mealType,
+  images: r.images,
+  visitedLocalDate: r.visitedLocalDate,
+  sortAt: r.sortAt.toISOString(),
+  kudosCount: r.kudosCount ?? 0,
+  commentCount: r.commentCount ?? 0,
+  viewerKudos: Boolean(r.viewerKudos),
+});
+
+// Which posts a feed shows. All set filters apply to cooks and visits alike.
+type FeedFilter = {
+  // One person's posts (profile).
+  authorDid?: string;
+  // Posts from the people this DID follows in this app, plus its own.
+  followedBy?: string;
+  // Dish names (cooks) or restaurant name + area (visits) containing this.
+  q?: string;
+  mealType?: string | null;
+};
+
+// One side of the feed union: the (kind, uri, sortAt) of a visible post
+// matching the filter, newest first, at most a page + 1. The search
+// expressions match the trigram indexes (cook_dish_trgm_idx,
+// visit_restaurant_trgm_idx) exactly so they apply.
+function feedKeys(kind: PostKind, f: FeedFilter, after: { sortAt: Date; uri: string } | null) {
+  const col = (c: string) => sql.ref(`${kind}.${c}`);
+  const where = [visibleAccount("account")];
+  if (f.authorDid) where.push(sql<boolean>`${col("authorDid")} = ${f.authorDid}`);
+  if (f.followedBy) {
+    where.push(sql<boolean>`(${col("authorDid")} = ${f.followedBy}
+      or ${col("authorDid")} in (select "subjectDid" from follow where follow."authorDid" = ${f.followedBy}))`);
   }
-  const rows = await q.execute();
-  const items = await withBadges(db, rows.slice(0, PAGE_SIZE).map(toView));
+  if (f.q) {
+    const text = kind === "cook" ? sql`cook."dishName"` : sql`visit."restaurantName" || ' ' || coalesce(visit."restaurantArea", '')`;
+    where.push(sql<boolean>`immutable_unaccent(${text}) ilike immutable_unaccent(${containsPattern(f.q)})`);
+  }
+  if (f.mealType) where.push(sql<boolean>`${col("mealType")} = ${f.mealType}`);
+  if (after) where.push(sql<boolean>`(${col("sortAt")}, ${col("uri")}) < (${after.sortAt}, ${after.uri})`);
+  return sql`
+    select ${sql.lit(kind)} as kind, ${col("uri")} as uri, ${col("sortAt")} as "sortAt"
+    from ${sql.table(kind)} join account on account.did = ${col("authorDid")}
+    where ${sql.join(where, sql` and `)}
+    order by ${col("sortAt")} desc, ${col("uri")} desc
+    limit ${PAGE_SIZE + 1}`;
+}
+
+// Newest first, PAGE_SIZE at a time, by the (sortAt, uri) cursor, across
+// cooks and visits. A fixed number of queries per page, never one per card:
+// the union picks the page (ordered and limited once), then one query each
+// loads its cooks and visits, and one looks up badges for the cooks.
+async function feedPage(db: Db, f: FeedFilter, viewer: string | null, cursor?: string | null): Promise<FeedPage> {
+  const after = cursor ? decodeCursor(cursor) : null;
+  const { rows: keys } = await sql<{ kind: PostKind; uri: string; sortAt: Date }>`
+    (${feedKeys("cook", f, after)}) union all (${feedKeys("visit", f, after)})
+    order by "sortAt" desc, uri desc
+    limit ${PAGE_SIZE + 1}
+  `.execute(db);
+  const page = keys.slice(0, PAGE_SIZE);
+  const uris = (kind: PostKind) => page.filter((k) => k.kind === kind).map((k) => k.uri);
+
+  const [cooks, visits] = await Promise.all([
+    uris("cook").length
+      ? cookQuery(db, viewer).where("cook.uri", "in", uris("cook")).execute().then((r) => withBadges(db, r.map(toView)))
+      : [],
+    uris("visit").length ? visitQuery(db, viewer).where("visit.uri", "in", uris("visit")).execute().then((r) => r.map(toVisitView)) : [],
+  ]);
+  const byUri = new Map<string, FeedItem>([
+    ...cooks.map((c) => [c.uri, { kind: "cook" as const, ...c }] as const),
+    ...visits.map((v) => [v.uri, { kind: "visit" as const, ...v }] as const),
+  ]);
+  // A post deleted between the two queries is just left out.
+  const items = page.flatMap((k) => byUri.get(k.uri) ?? []);
+  const last = page[page.length - 1];
   return {
     items,
-    cursor: rows.length > PAGE_SIZE ? encodeCursor(items[items.length - 1]) : null,
+    cursor: keys.length > PAGE_SIZE ? encodeCursor({ sortAt: last.sortAt.toISOString(), uri: last.uri }) : null,
   };
 }
 
-// Newest first. With authorDid: one person's cooks (profile). With
-// followedBy: cooks from the people that DID follows in this app, plus its
-// own (following feed). Neither: every indexed cook (global feed).
-export async function getCookFeed(opts: {
+// Newest first, cooks and visits together. With authorDid: one person's
+// posts (profile). With followedBy: posts from the people that DID follows
+// in this app, plus its own (following feed). Neither: every indexed post
+// (global feed).
+export async function getFeed(opts: {
   authorDid?: string;
   followedBy?: string;
   viewer?: string | null;
@@ -157,22 +268,7 @@ export async function getCookFeed(opts: {
   db?: Db;
 }): Promise<FeedPage> {
   const db = opts.db ?? getDb();
-  let q = cookQuery(db, opts.viewer);
-  if (opts.authorDid) q = q.where("cook.authorDid", "=", opts.authorDid);
-  const me = opts.followedBy;
-  if (me) {
-    q = q.where((eb) =>
-      eb.or([
-        eb("cook.authorDid", "=", me),
-        eb(
-          "cook.authorDid",
-          "in",
-          eb.selectFrom("follow").select("follow.subjectDid").where("follow.authorDid", "=", me),
-        ),
-      ]),
-    );
-  }
-  return cookPage(db, q, opts.cursor);
+  return feedPage(db, { authorDid: opts.authorDid, followedBy: opts.followedBy }, opts.viewer ?? null, opts.cursor);
 }
 
 // A profile by DID or handle, or null if unknown or hidden.
@@ -202,10 +298,24 @@ export type CommentPage = { items: CommentView[]; cursor: string | null };
 const authorCols = ["account.did", "account.handle", "account.displayName", "account.avatarCid"] as const;
 
 export const cookUriOf = (did: string, rkey: string) => `at://${did}/${COLLECTIONS.cook}/${rkey}`;
+export const visitUriOf = (did: string, rkey: string) => `at://${did}/${COLLECTIONS.visit}/${rkey}`;
 
-// A cook's comments, oldest first, 20 per page (§6.2). Comments on a cook
-// that is gone or hidden aren't shown (§6.2), but their rows are kept: the
-// cook may come back (e.g. its author is reactivated).
+export type PostKind = "cook" | "visit";
+
+// Which kind of post an at-uri names (by its collection), or null.
+export function postKindOf(uri: string): PostKind | null {
+  try {
+    const { collection } = new AtUri(uri);
+    return collection === COLLECTIONS.cook ? "cook" : collection === COLLECTIONS.visit ? "visit" : null;
+  } catch {
+    return null;
+  }
+}
+
+// A cook's or a visit's comments, oldest first, 20 per page (§6.2).
+// Comments on a post that is gone or hidden aren't shown (§6.2), but their
+// rows are kept: the post may come back (e.g. its author is reactivated).
+// `cookUri` is the uri of either kind.
 export async function getComments(opts: {
   cookUri: string;
   cursor?: string | null;
@@ -217,7 +327,7 @@ export async function getComments(opts: {
     .innerJoin("account", "account.did", "comment.authorDid")
     .where(visibleAccount("account"))
     .where("comment.subjectUri", "=", opts.cookUri)
-    .where((eb) => eb.exists(cookQuery(db).where("cook.uri", "=", opts.cookUri)))
+    .where(sql<boolean>`exists (${visiblePostSql(opts.cookUri)})`)
     .select([...authorCols, "comment.uri", "comment.text", "comment.sortAt"])
     .orderBy("comment.sortAt", "asc")
     .orderBy("comment.uri", "asc")
@@ -243,41 +353,57 @@ export async function getComments(opts: {
   };
 }
 
-// The visible cook at uri (uri + cid for a strongRef), or null.
-export async function getVisibleCook(uri: string, db: Db = getDb()) {
-  return (
-    (await db
-      .selectFrom("cook")
-      .innerJoin("account", "account.did", "cook.authorDid")
-      .where(visibleAccount("account"))
-      .where("cook.uri", "=", uri)
-      .select(["cook.uri", "cook.cid", "cook.authorDid"])
-      .executeTakeFirst()) ?? null
-  );
+// The visible cook or visit at uri, as SQL selecting (uri, cid,
+// "authorDid"). A uri that names neither selects nothing.
+function visiblePostSql(uri: string) {
+  const kind = postKindOf(uri);
+  if (!kind) return sql<{ uri: string; cid: string; authorDid: string }>`select null::text as uri, null::text as cid, null::text as "authorDid" where false`;
+  return sql<{ uri: string; cid: string; authorDid: string }>`
+    select p.uri, p.cid, p."authorDid" from ${sql.table(kind)} p
+    join account on account.did = p."authorDid"
+    where ${visibleAccount("account")} and p.uri = ${uri}`;
 }
+
+// The visible cook or visit at uri (uri + cid for a strongRef), or null.
+// Kudos and comments can be given on either.
+export async function getVisiblePost(uri: string, db: Db = getDb()) {
+  const kind = postKindOf(uri);
+  if (!kind) return null;
+  const { rows } = await visiblePostSql(uri).execute(db);
+  return rows[0] ? { ...rows[0], kind } : null;
+}
+
+// Who gave a post kudos (visible accounts only), earliest first.
+const kudosAuthors = (db: Db, uri: string) =>
+  db
+    .selectFrom("kudos")
+    .innerJoin("account", "account.did", "kudos.authorDid")
+    .where(visibleAccount("account"))
+    .where("kudos.subjectUri", "=", uri)
+    .select(authorCols)
+    .orderBy("kudos.createdAt", "asc")
+    .execute();
 
 export async function getCookDetail(did: string, rkey: string, db: Db = getDb(), viewer: string | null = null) {
   const uri = cookUriOf(did, rkey);
   const row = await cookQuery(db, viewer).where("cook.uri", "=", uri).executeTakeFirst();
   if (!row) return null;
 
-  const [kudos, comments] = await Promise.all([
-    db
-      .selectFrom("kudos")
-      .innerJoin("account", "account.did", "kudos.authorDid")
-      .where(visibleAccount("account"))
-      .where("kudos.subjectUri", "=", uri)
-      .select(authorCols)
-      .orderBy("kudos.createdAt", "asc")
-      .execute(),
-    getComments({ cookUri: uri, db }),
-  ]);
+  const [kudos, comments] = await Promise.all([kudosAuthors(db, uri), getComments({ cookUri: uri, db })]);
 
   const [cook] = await withBadges(db, [toView(row)]);
   return { cook, kudos: kudos satisfies Author[], comments };
 }
 
-// The viewer's kudos record for a cook, if any.
+export async function getVisitDetail(did: string, rkey: string, db: Db = getDb(), viewer: string | null = null) {
+  const uri = visitUriOf(did, rkey);
+  const row = await visitQuery(db, viewer).where("visit.uri", "=", uri).executeTakeFirst();
+  if (!row) return null;
+  const [kudos, comments] = await Promise.all([kudosAuthors(db, uri), getComments({ cookUri: uri, db })]);
+  return { visit: toVisitView(row), kudos: kudos satisfies Author[], comments };
+}
+
+// The viewer's kudos record for a cook or a visit, if any.
 export async function getKudosUri(viewer: string, cookUri: string, db: Db = getDb()) {
   const row = await db
     .selectFrom("kudos")
@@ -349,6 +475,26 @@ export async function getCookDayCounts(
     .select(["cook.cookedLocalDate as date", sql<number>`count(*)::int`.as("count")])
     .groupBy("cook.cookedLocalDate")
     .orderBy("cook.cookedLocalDate")
+    .execute();
+}
+
+// Visits per local day (visitedLocalDate) in [from, to]: the profile's
+// eating-out line (Phase 6.8), bucketed in the browser like cook stats.
+export async function getVisitDayCounts(
+  did: string,
+  window: { from: string; to: string },
+  db: Db = getDb(),
+): Promise<DayCount[]> {
+  return db
+    .selectFrom("visit")
+    .innerJoin("account", "account.did", "visit.authorDid")
+    .where(visibleAccount("account"))
+    .where("visit.authorDid", "=", did)
+    .where("visit.visitedLocalDate", ">=", window.from)
+    .where("visit.visitedLocalDate", "<=", window.to)
+    .select(["visit.visitedLocalDate as date", sql<number>`count(*)::int`.as("count")])
+    .groupBy("visit.visitedLocalDate")
+    .orderBy("visit.visitedLocalDate")
     .execute();
 }
 
@@ -450,10 +596,11 @@ export async function getEarliestCookMonth(db: Db = getDb()): Promise<Month | nu
 // A LIKE pattern matching `q` anywhere, with its own %, _ and \ literal.
 export const containsPattern = (q: string) => `%${q.replace(/[\\%_]/g, "\\$&")}%`;
 
-// Dish names containing q, case- and accent-insensitive (the trigram index
-// on immutable_unaccent("dishName")), newest first, paged like the feeds.
+// Cooks whose dish name, and visits whose restaurant name or area, contain
+// q, case- and accent-insensitive (the trigram indexes), newest first in
+// one list, paged like the feeds. The meal filter applies to both kinds.
 // `q` must already be normalized (lib/search.ts).
-export async function searchCooks(opts: {
+export async function searchPosts(opts: {
   q: string;
   mealType?: string | null;
   viewer?: string | null;
@@ -461,11 +608,7 @@ export async function searchCooks(opts: {
   db?: Db;
 }): Promise<FeedPage> {
   const db = opts.db ?? getDb();
-  let q = cookQuery(db, opts.viewer).where(
-    sql<boolean>`immutable_unaccent(cook."dishName") ilike immutable_unaccent(${containsPattern(opts.q)})`,
-  );
-  if (opts.mealType) q = q.where("cook.mealType", "=", opts.mealType);
-  return cookPage(db, q, opts.cursor);
+  return feedPage(db, { q: opts.q, mealType: opts.mealType }, opts.viewer ?? null, opts.cursor);
 }
 
 // Visible accounts whose display name or handle contains q, at most 5;

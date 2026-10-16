@@ -3,12 +3,13 @@ import { Client } from "@atproto/lex";
 import { AtUri, isValidTid } from "@atproto/syntax";
 import { PUBLIC_URL } from "@/lib/auth/client";
 import { getSession } from "@/lib/auth/session";
-import { getVisibleCook } from "@/lib/db/queries";
+import { getVisiblePost } from "@/lib/db/queries";
 import { readJson } from "@/lib/http";
-import { cookShareUrl } from "@/lib/share";
+import { cookShareUrl, visitShareUrl } from "@/lib/share";
 import { createBskyPost, hasBskyPostScope } from "@/lib/social/bluesky";
 
-// POST { cook: uri, rkey: tid } — post your own cook to Bluesky.
+// POST { cook: uri, rkey: tid } — post your own cook or visit to Bluesky
+// (`cook` is either uri).
 // 403 { reauth: true } when this session predates the Bluesky post scope.
 export async function POST(request: NextRequest) {
   const session = await getSession();
@@ -19,10 +20,10 @@ export async function POST(request: NextRequest) {
   if (typeof rkey !== "string" || !isValidTid(rkey)) {
     return NextResponse.json({ error: "Invalid rkey" }, { status: 400 });
   }
-  const target = typeof body?.cook === "string" ? await getVisibleCook(body.cook) : null;
-  if (!target) return NextResponse.json({ error: "Cook not found" }, { status: 404 });
+  const target = typeof body?.cook === "string" ? await getVisiblePost(body.cook) : null;
+  if (!target) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (target.authorDid !== session.did) {
-    return NextResponse.json({ error: "You can only post your own cooks to Bluesky" }, { status: 403 });
+    return NextResponse.json({ error: `You can only post your own ${target.kind}s to Bluesky` }, { status: 403 });
   }
 
   const { scope } = await session.getTokenInfo(false);
@@ -33,14 +34,15 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const cookRkey = new AtUri(target.uri).rkey;
+  const subject = { kind: target.kind, rkey: new AtUri(target.uri).rkey };
+  const shareUrl = target.kind === "visit" ? visitShareUrl : cookShareUrl;
   try {
     const post = await createBskyPost(
       new Client(session),
       session.did,
-      cookRkey,
+      subject,
       rkey,
-      cookShareUrl(PUBLIC_URL, session.did, cookRkey),
+      shareUrl(PUBLIC_URL, session.did, subject.rkey),
     );
     return NextResponse.json(post);
   } catch (err) {
