@@ -1,38 +1,78 @@
 # Progress
 
-## Phase 6.8 — Eating out (restaurant visits with reviews) — ⏸ at checkpoint A (Lexicon + migration), waiting for approval
+## Phase 6.8 — Eating out (restaurant visits with reviews) — ⏸ at checkpoint B: built and tested locally; live PDS/Tap checks and the iPhone review are the human's
 
-Branch: `feature/phase-6.8` (from main after PR #15). Spec: §4 `NS.visit`, §8 Phase 6.8.
+Branch: `feature/phase-6.8` (from main after PR #15). Checkpoint A (Lexicon + migration) approved by the human 2026-10-16. Spec: §2.1, §2.2, §4, §5, §6, §7 updated.
 
-### Built (step 1 only)
+### Built
 
-- **`lexicons/com/example/cooklog/visit.json`**: `restaurant` (`#restaurant`: `name` 1–100 graphemes, optional `area` ≤ 100), `rating` integer 1–5, optional `review` ≤ 1000 graphemes, `mealType` (`knownValues` incl. `drinks`, max 64 chars), `images` (1–4 × `com.example.cooklog.cook#image`, so the same blob limits), `visitedAt` / `createdAt` datetimes. Byte caps (`maxLength` = 10× graphemes) as in `cook.json`.
-- `cook.json`: `drinks` added to `knownValues`. `kudos.json` / `comment.json`: descriptions say "a cook or a visit" (schemas unchanged).
-- `pnpm lex:build` → `lib/lexicons-gen/com/example/cooklog/visit*.ts`; re-exported as `visit` from `lib/lexicons.ts`. `COLLECTIONS.visit` in `lib/config.ts` (not yet in `SCOPE`: that's step 3).
-- `MEAL_TYPES` gains `{ value: "drinks", label: "Drinks" }`, so the Log chips, search chips, `/api/cook` validation and the Best tab (now 7 categories) pick it up.
-- **Migration `005_visit`** (additive): table `visit` as in the spec, plus `VisitTable` in `lib/db/schema.ts`. Indexes: `visit_sort_idx (sortAt desc, uri desc)`, `visit_author_sort_idx (authorDid, sortAt desc, uri desc)`, `visit_author_local_date_idx (authorDid, visitedLocalDate)`, `visit_restaurant_trgm_idx` GIN on `immutable_unaccent("restaurantName" || ' ' || coalesce("restaurantArea", ''))`.
+- **Lexicon** `NS.visit` (`lexicons/com/example/cooklog/visit.json`): `restaurant` {`name` 1–100 graphemes, `area` ≤ 100}, `rating` integer 1–5, `review` ≤ 1000, `mealType`, `images` (1–4 × `NS.cook#image`), `visitedAt`, `createdAt`. `drinks` added to `knownValues` (cook and visit) and `MEAL_TYPES` (so Log/search chips and a 7th Best category). Kudos/comment descriptions say "a cook or a visit".
+- **Migration `005_visit`**: `visit` table mirroring `cook`; indexes `(sortAt desc, uri desc)`, `(authorDid, sortAt desc, uri desc)`, `(authorDid, visitedLocalDate)`, trigram GIN on `immutable_unaccent("restaurantName" || ' ' || coalesce("restaurantArea", ''))`.
+- **Indexing** (`lib/indexer/visit.ts`, `index.ts`): `$parse`, `ensureAccount`, idempotent single-statement upsert (same cid = no-op, new cid keeps `sortAt`), delete, purge on account deletion; an empty `area` is stored as null. Kudos and comments accept a cook *or* a visit subject (`isPostUri`). Image proxy `isReferenced` also accepts visit photos (and takes a `db` for tests). Rebuild script wipes and re-syncs `visit`.
+- **Auth**: `repo:NS.visit` in `SCOPE`; `hasVisitScope` (`lib/auth/scope.ts`). `/api/visit` POST/DELETE return `403 { reauth: true }` on an older session; the Log form and the delete dialog offer "Sign in again" (`components/reauth.ts`, shared with Post to Bluesky).
+- **Write routes**: `POST /api/visit` (client TID reused on retry, `$parse` before the PDS, read-your-own-writes upsert; empty area/review left out of the record), `DELETE /api/visit` (a missing record is success). `/api/kudos`, `/api/comment` and `/api/share/bluesky` look subjects up with `getVisiblePost` (cook or visit; body field still `cook`). Post to Bluesky for visits: "Lilia, Brooklyn\n★★★★☆\n\nreview…\n\nlink" (`visitShareText`), photos reused.
+- **Reads** (`lib/db/queries.ts`): `FeedItem` = `{kind:"cook"} & CookView | {kind:"visit"} & VisitView`. `feedPage`: a `UNION ALL` of `(kind, uri, sortAt)` keys from both tables (each side limited, then ordered and limited once), then one query per kind for the page's rows, plus the badge lookup: **4 queries per page**. `getFeed` (was `getCookFeed`), `searchPosts` (was `searchCooks`; dish names, restaurant name + area), `getVisitDetail`, `getVisiblePost`, `getVisitDayCounts`. `getComments` hides comments on a gone/hidden visit too. Cook stats, Best and badges unchanged (cooks only). `VisitView` carries `visitedLocalDate`, never `visitedAt`.
+- **Design**: tokens `out` `#a8471f` / dark `#e8916d`, `out-soft` `#f7e6dc` / dark `#3a2117` (AA below). Components: `VisitCard`, `VisitDate` (Today / Yesterday / "Wed 14 Oct", year if not this year), `Stars`, `AteOutLabel`, `StarRating` (radiogroup), `PostParts` (`AuthorLink`, `FullPhotos`, shared with the cook page). `ShareCookButton` → `SharePostButton`, `DeleteCookButton` → `DeletePostButton`, `LogCookForm` → `LogForm` (generalized for both kinds).
+- **Pages**: `/visit/[did]/[rkey]` (public, OG/Twitter tags, `noindex`, Sign in → `?next=`), with loading state; not-found/error from the `(cook)` group. Log: **Cooked it | Ate out** switch (sessionStorage), header now "Log". Search: placeholder "Dishes, restaurants or people", empty states reworded. Profile: eating-out line under the stats when either count > 0.
+
+### AA results for the new tokens
+
+| | background | surface | sunken | out-soft |
+|---|---|---|---|---|
+| `out` light `#a8471f` | 5.42 | 5.86 | 4.93 | 4.83 |
+| `out` dark `#e8916d` | 7.68 | 7.10 | 8.05 | 6.17 |
+
+Stars are graphics (3:1 needed); the label text is ≥ 4.5 everywhere it sits.
 
 ### Decisions not in the spec
 
-- No icon for Drinks: meal types have no icons anywhere in the app today (chips and labels are text), so there's nothing to keep it "in keeping with".
-- Added `visit_author_local_date_idx`, mirroring `cook_author_local_date_idx`, for the eating-out stats (step 5).
-- `area` has no `minGraphemes`: the spec only gives a max. The write route (step 4) will omit an empty area instead of writing `""`.
-- The `restaurant` object has a description noting there's no place ID, so reviews of one place aren't linked.
+- No icon for Drinks (meal types have no icons anywhere).
+- Extra index `visit_author_local_date_idx` for the eating-out counts.
+- `area` has no `minGraphemes`; the write route omits an empty area and the indexer stores `""` from other clients as null.
+- The page/search union fetches only keys first, then rows per kind (rather than one wide union with nullable columns): simpler types, same fixed query count.
+- `VisitView` doesn't carry `visitedAt` at all, so the time never reaches the browser or `/api/feed`. `sortAt` (≈ when it was posted) is still in the view and the cursor, as for cooks; the spec accepts this ("only stops casual viewers").
+- The visit date on cards renders the plain date on the server and switches to Today/Yesterday after hydration (no blank first paint, no hydration mismatch). The visit page always shows the plain date ("Visited Wed 14 Oct").
+- The spec's "Tue 14 Oct" example is a Wednesday in 2026; the format is weekday-day-month (`en-GB`).
+- "Ate out" pill sits at the right of the author row (above the photos), on the card and the page.
+- The star *input* is basil (it's a control); displayed ratings are terracotta.
+- Rating sits right after Area on the Log form, before Meal; Review replaces Note in place; the date field is labelled "When".
+- The Log header is "Log" (was "Log a cook"), since it now logs both.
+- The signed-out visit page's pitch says "Log what you cook and where you eat, see what friends do." (the cook page's line is unchanged).
+- `/api/kudos`, `/api/comment` and `/api/share/bluesky` keep the body field `cook` for either kind (existing clients and tests unchanged); 404 messages are now "Not found".
+- Import candidates (§6.3) still mean "has at least one cook"; someone who has only posted visits isn't offered. Say if that should widen.
+- Reauth on the Log form happens at submit: the user signs in again and must re-add photos. A pre-check when switching to Ate out would need a new `GET` route; not built.
+
+### Tap and the signal collection
+
+`--signal-collection` takes **one exact NSID** (indigo `cmd/tap/main.go` + `util.go`, commit 3beb6e4, 2026-10-13). Accounts that have only posted visits aren't auto-discovered. Every visit written by this app comes from a signed-in user, and login calls `/repos/add`, so the gap is only visits written by other clients from accounts that never signed in here. Options for the human: (a) accept it (recommended for now); (b) a small periodic job calling the relay's `com.atproto.sync.listReposByCollection` for `NS.visit` and `/repos/add`-ing new DIDs; (c) propose multiple signal collections upstream in indigo. Documented in SPEC §6.1 and the README.
 
 ### Verified (and how)
 
-- `pnpm test`: 180/180 (new: 29 visit parse cases in `lib/lexicons.test.ts` — valid record, 4 webp/no area/no review/no alt, ratings 1 and 5, `drinks` and unknown meal types; rejects rating 0/6/3.5/"4"/missing, missing/empty/101-grapheme name, 101-grapheme area, 1001-grapheme review, 0 and 5 images, PNG, >1 MB, missing aspectRatio, `visitedAt` without an offset, a bad/missing `visitedAt`, missing mealType, a cook `$type`; `drinks` on a cook; `lib/db/best.test.ts`: Best lists 7 categories, drinks wins its own).
-- `pnpm typecheck`, `pnpm lint`: clean (a fresh clone needs `pnpm next typegen` first for `PageProps`/`LayoutProps`).
-- `pnpm migrate` on local Postgres 16 (native, no Docker in the cloud session): `005_visit` applied; `\d visit` shows the columns and the four indexes.
-- `pnpm test:e2e` (cloud Chromium via a throwaway config): 38/39. `best-search.spec.ts` now expects 7 Best rows. The failure is `profile.spec.ts` "someone's profile …" (24 cards expected, 25 seen): the pull-to-refresh test in another worker inserts a Mira cook at the same time. Not caused by this change; the spec passes on its own (twice).
+- `pnpm typecheck`, `pnpm lint`: clean. `pnpm test`: **244/244** (new: visit parse cases; visit indexer valid/invalid/update/delete/replay/RYOW/purge; kudos & comments on visits; a wipe-and-replay "rebuild" with a visit gives the same rows; `lib/db/feed.test.ts` — paging 45 mixed posts with cook/visit `sortAt` ties, Following/Global/profile, denylist and inactive, `viewerKudos` on visits, **4 queries for a 2-item and a 25-item page**, visit detail and orphans, search across both kinds incl. area, accents, meal filter and paging, cook stats/Best/badges ignoring a 2-kudos visit, eating-out bucketing across midnight UTC; `isReferenced` for visit photos; `hasVisitScope`; visit share text and Bluesky record; `formatVisitDate`; `app/api/visit/route.test.ts` — the route against a fake PDS through the real lex Client: record fields, empty area/review omitted, retry after a lost response, 502, 12 rejected bodies never reach the PDS, 403 reauth, 401, delete + retry).
+- `pnpm test:e2e` (cloud Chromium via a throwaway config; the global setup's own launch patched for the run and reverted): **52/52** (39 existing + 13 in `e2e/signed-in/visits.spec.ts`: visit cards in Global/Following with a date and never a time, kudos on a visit card, the visit page signed in and out (OG title, `noindex`, Sign in `?next=`), commenting on a visit, delete + the reauth path, logging a visit (mode switch keeps photo and meal, validation, the star control by keyboard, failure then retry with the same rkey, request body), mode remembered, reauth on Log, search by name and area, the eating-out line present/absent, Lilia (3 kudos) not on the Best tab). `/api/visit` is in the safety net. Fixtures now include 3 visits; teardown leaves 0 rows.
+- `curl` on the dev server: `POST`/`DELETE /api/visit` signed out → 401; `/api/kudos` with a visit uri → 401.
+- `EXPLAIN` with 20k cooks + 10k visits inside `BEGIN … ROLLBACK`: global page = `Merge Append` of `cook_sort_idx` and `visit_sort_idx` index scans (no full sort); profile = index-only scans on both `*_author_sort_idx`; search = bitmap scans on `cook_dish_trgm_idx` and `visit_restaurant_trgm_idx`.
+- Screenshots at 375px, light and dark (feed mixing cards, visit card, visit page signed in/out, share sheet, Log in both modes, search, profile): looked at each; contact sheets were in the cloud session's scratchpad (not in the repo).
+- **Not verified (no PDS/Bluesky/plc network in the cloud session):** a real visit written to a PDS and read back with `getRecord`, its delivery through Tap, a real rebuild with a visit in a repo, the OAuth re-consent for `repo:NS.visit`, and the iPhone review.
+
+### Human verification (checkpoint B)
+
+1. `pnpm migrate` (adds `005_visit`), restart `pnpm dev` and Tap.
+2. Sign in on the iPhone (tunnel). Log → **Ate out** → post a visit: expect "Sign in again" (old session lacks `repo:NS.visit`). Approve, come back to /log, post it (re-add the photo).
+3. `com.atproto.repo.getRecord` for `com.example.cooklog.visit/<rkey>`: restaurant {name, area}, rating, review, mealType, images (blob refs, aspect ratios), `visitedAt` with your offset, `createdAt`.
+4. Through Tap: delete the row (`delete from visit where uri = …`), Tap `/repos/remove` + `/repos/add` for your DID; the row comes back within seconds.
+5. Give kudos on it from the second account if available; check the feed (next to cooks), the visit page, search by restaurant and area, the eating-out line on your profile.
+6. Delete it from the visit page; check it's gone from the PDS and the index.
+7. Optionally: `pnpm rebuild-index` (dry run) lists `visit` counts; a real rebuild with a visit in your repo.
 
 ### Known issues
 
-- Pre-existing: the parallel e2e race above (pull-to-refresh's inserted Mira cook vs the Mira profile count). Fix later by giving the inserted cook a different author, or running those two specs serially.
+- Pre-existing e2e race (seen once at checkpoint A, not in the last two full runs): pull-to-refresh's inserted Mira cook vs the Mira profile count in another worker.
+- Carried: dev "N" indicator over the Feed tab; placeholder icons and "Cooklog" (Phase 7; the human plans a food-wide name).
 
 ### Next step
 
-Human reviews the Lexicon JSON and migration (checkpoint A). After approval: steps 2–3 (indexer, kudos/comment subjects, Tap signal collection, rebuild, proxy, `repo:NS.visit` scope) per the build order in SPEC §8 Phase 6.8.
+Human runs the checkpoint B checks above and reviews on the iPhone. Then open the PR for `feature/phase-6.8`. Phase 7 stays blocked on the domain and the new name.
 
 ## Sharing (human-requested, outside the phase plan) — merged (PR #12, 2026-10-12); Bluesky posting verified live, share sheet and signed-out link still to try
 

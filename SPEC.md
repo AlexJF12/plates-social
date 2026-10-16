@@ -87,11 +87,13 @@ The human you are working with reads and reviews code comfortably. Keep explanat
 - **Sharing** (human-requested): a Share button on the cook detail page opens a sheet with
   - **Post to Bluesky** (author only): one `app.bsky.feed.post` in the author's repo with the dish name, note (cut with "…" to fit 300 graphemes), a link facet to the cook page, and the cook's photos as an `app.bsky.embed.images` embed reusing the blobs already in the repo (no re-upload). The rkey is a client TID reused on retry. Not indexed.
   - **Share…**: the native iOS/Android share sheet (`navigator.share`) with the photos as JPEG files and the text "dish, note, link"; without Web Share, an `sms:` link with the text only. Plus **Copy link**.
+- **Eating out** (Phase 6.8): a second kind of post, a **visit** (`NS.visit`, §4): a meal eaten at a restaurant with 1–4 photos, the restaurant (name, optional area, free text), a required 1–5 star rating, an optional review, the meal type and when. Visits sit in the same feeds, profiles and search results as cooks, newest first, on a visibly different card (the "Ate out" label and terracotta stars), and get kudos and comments like cooks. They show **the date only, never a time** ("Today", "Yesterday", "Wed 14 Oct"), so a visit posted at the table doesn't say where its author is right now. The visit page `/visit/[did]/[rkey]` is public like the cook page, with Share (Post to Bluesky for the author: restaurant and area, "★★★★☆", the review cut to fit, link) and delete. The Log screen switches between **Cooked it | Ate out**. Profiles add an eating-out line ("Ate out 2 this week · 5 this month") only when either count is above zero. Cook stats, Best cook and badges stay cooks only.
+- **Meal types**: breakfast, lunch, dinner, snack, bread, dessert, drinks (`drinks` since Phase 6.8), for cooks and visits alike.
 - **Public cook page**: `/cook/[did]/[rkey]` is viewable signed out (photos, dish, note, author, counts; no kudos list, comments or profile links), with Open Graph/Twitter tags for link previews, `noindex`, and "Sign in" that returns to the cook (`?next=`, carried through the OAuth `state`).
 
 ### 2.2 Explicitly out of scope
 
-Editing cooks, streaks, heatmaps, any other stats, recipes, ingredients, tags, cooking time, automatic cross-posting to Bluesky (only the explicit "Post to Bluesky" in §2.1), notifications (including web push), search beyond dish names and people (notes, comments, full-text ranking), DMs, video, native mobile apps or app store builds, offline posting, moderation tooling beyond the denylist in §7.
+Editing cooks or visits, restaurant pages or linking reviews of the same place, a places/maps lookup, price level, dishes ordered, restaurant stats or a "Best restaurant", text-only reviews (visits need photos), streaks, heatmaps, any other stats, recipes, ingredients, tags, cooking time, automatic cross-posting to Bluesky (only the explicit "Post to Bluesky" in §2.1), notifications (including web push), search beyond dish names and people (notes, comments, full-text ranking), DMs, video, native mobile apps or app store builds, offline posting, moderation tooling beyond the denylist in §7.
 
 ---
 
@@ -165,7 +167,7 @@ Profiles are **not** a custom Lexicon. Display names and avatars come from the u
 ## 5. Auth
 
 - Follow the OAuth tutorial's session and client setup. For local development, use the loopback (localhost) client pattern it uses. No domain is needed yet.
-- Scopes: `atproto repo:NS.cook repo:NS.kudos repo:NS.comment repo:NS.follow repo:app.bsky.feed.post?action=create blob:image/*`, with `NS` expanded. Sessions from before the feed.post scope was added lack it: "Post to Bluesky" checks the token's scope and asks the user to sign in again (same account) to grant it.
+- Scopes: `atproto repo:NS.cook repo:NS.visit repo:NS.kudos repo:NS.comment repo:NS.follow repo:app.bsky.feed.post?action=create blob:image/*`, with `NS` expanded. Sessions from before the feed.post scope was added lack it: "Post to Bluesky" checks the token's scope and asks the user to sign in again (same account) to grant it. The same goes for `repo:NS.visit` (Phase 6.8): posting or deleting a visit on an older session returns `403 { reauth: true }` and the UI offers "Sign in again"; everything else keeps working on the old session.
 - Before launch (Phase 7, once there's a real domain), replace the individual `repo:` scopes with a published **permission set** for the namespace so users see a readable consent screen. Don't do this before then.
 - On every successful login, register the user's DID with Tap (`POST /repos/add`). This is required: see §6.1.
 - Sign-in must work from the installed home-screen app, not just the browser. See the OAuth item in §7.1.
@@ -177,7 +179,7 @@ Profiles are **not** a custom Lexicon. Display names and avatars come from the u
 ### 6.1 Sync with Tap
 
 - Tap config: `TAP_SIGNAL_COLLECTION=NS.cook`, `TAP_COLLECTION_FILTERS=NS.*,app.bsky.actor.profile`, webhook mode pointed at `/api/webhook`, admin password required (verify it with `assureAdminAuth` as in the tutorial).
-- The signal collection only discovers accounts that have posted a cook. A user who has only given kudos or followed someone would be missed, which is why login also calls `/repos/add`.
+- The signal collection only discovers accounts that have posted a cook. A user who has only given kudos or followed someone would be missed, which is why login also calls `/repos/add`. Tap's `--signal-collection` takes one exact NSID (checked in the indigo source, 2026-10-13), so an account that has **only posted visits** is also discovered only through sign-in. Visits written by this app always come from signed-in users, so the gap is visits written by other clients from accounts that never signed in here.
 - The webhook must be **idempotent**, because Tap delivery is at-least-once. Key every table by record `uri`. Handle `create`, `update` (treat as upsert, though our UI never edits) and `delete`.
 - `identity` events: upsert handle and active status. Deleted accounts: purge all their rows. Inactive accounts: hide their content but keep the rows.
 - Records that fail `$parse` or violate §4 limits are dropped and logged, never partially indexed.
@@ -188,15 +190,16 @@ Use Kysely migrations. Suggested tables (adjust if you have a reason, and say wh
 
 - `account` — `did` PK, `handle`, `displayName`, `avatarCid`, `active`, `updatedAt`
 - `cook` — `uri` PK, `cid`, `authorDid`, `dishName`, `mealType`, `note`, `images` (jsonb: cid, mime, alt, aspectRatio), `cookedAt` (original string), `cookedAtUtc` (timestamptz), `cookedLocalDate` (date in the author's own offset), `createdAt`, `indexedAt`, `sortAt`
+- `visit` (Phase 6.8, migration `005_visit`) — mirrors `cook`: `restaurantName`, `restaurantArea`, `rating` (smallint), `review` in place of dish and note, `visitedAt`/`visitedAtUtc`/`visitedLocalDate`. Kudos and comments on visits use the same tables (`subjectUri` is a visit).
 - `kudos` — `uri` PK, `authorDid`, `subjectUri`, `subjectCid`, `createdAt`; unique (`authorDid`, `subjectUri`), keeping the earliest if duplicates arrive
 - `comment` — `uri` PK, `authorDid`, `subjectUri`, `text`, `createdAt`, `sortAt`
 - `follow` — `uri` PK, `authorDid`, `subjectDid`, `createdAt`; unique (`authorDid`, `subjectDid`)
 - `pending_login` — only if the §7.1 claim flow is needed
 - plus the OAuth tutorial's auth state/session tables
 
-`sortAt = min(createdAt, indexedAt)`, so a backdated or future-dated `createdAt` can't game feed order. Feeds and comment lists order by `sortAt`. Use cursor pagination (sortAt + uri), 20 items per page, with infinite scroll.
+`sortAt = min(createdAt, indexedAt)`, so a backdated or future-dated `createdAt` can't game feed order. Feeds and comment lists order by `sortAt`. Use cursor pagination (sortAt + uri), 20 items per page, with infinite scroll. Feeds and search return cooks and visits together: a `UNION ALL` of the two filtered selects picks the page's `(kind, uri, sortAt)` (ordered and limited once), then one query each loads the page's cooks and visits, and one looks up badges: 4 queries per page, whatever its size.
 
-Kudos and comments whose subject cook is gone or hidden are not shown. Don't delete other people's rows because of that.
+Kudos and comments whose subject cook or visit is gone or hidden are not shown. Don't delete other people's rows because of that.
 
 ### 6.3 Follows and Bluesky import
 
@@ -208,6 +211,8 @@ Kudos and comments whose subject cook is gone or hidden are not shown. Don't del
 
 On every profile: **cooks this week** and **cooks this month**. Count cook records, where weeks start Monday and months are calendar months. Both are computed from `cookedLocalDate`, i.e. in the author's own local calendar as recorded by the offset in `cookedAt`, not the server's time zone. The "current" week and month are determined in the viewer's time zone (sent by the browser). Write unit tests for the bucketing, including offsets that cross midnight UTC.
 
+**Eating out** (Phase 6.8): the same per-day counts from `visitedLocalDate`, bucketed by the same code, shown as one smaller line under the cook figures. Visits never count as cooks.
+
 ### 6.5 Photos
 
 - On the client, before upload: downscale to max 2000px on the long edge and re-encode to JPEG or WebP under 1,000,000 bytes. Re-encoding through a canvas also **strips EXIF, including GPS location**. That matters here, since kitchen photos reveal where people live. Record each image's aspect ratio.
@@ -218,7 +223,7 @@ On every profile: **cooks this week** and **cooks this month**. Count cook recor
 
 ### 6.6 Deletion
 
-Deleting a cook or comment calls `deleteRecord`, removes the row immediately, and asks for confirmation first. Kudos toggling creates or deletes the viewer's single `NS.kudos` record for that cook.
+Deleting a cook, visit or comment calls `deleteRecord`, removes the row immediately, and asks for confirmation first. Kudos toggling creates or deletes the viewer's single `NS.kudos` record for that cook.
 
 ---
 
@@ -227,16 +232,19 @@ Deleting a cook or comment calls `deleteRecord`, removes the row immediately, an
 **Phone first, installed as an app.** Design at 375px width first, then make sure it scales sensibly to desktop (a centered column is fine).
 
 **A cookbook crossed with Strava; the photos do the talking.** (Design system set in Phase 6.5; tokens in `app/globals.css`, primitives in `components/ui.tsx`.) Concretely:
-- **Color:** warm paper background (`#f8f6f1`, dark `#151311`), warm ink text (`#211d18`, dark `#f3efe8`), one **basil-green accent** (`#2f6b3f`, dark `#8cc596`) used only for interactive elements and active kudos. Plus `surface` (inputs, dialogs), `sunken` (bands between feed cards and sections, photo placeholders), `muted`, `border`, `accent-soft` (toggled-on state), `danger`. Every text pair meets WCAG AA in both schemes. Dark mode is its own palette, not an inversion. No gradients, no decorative illustration. `THEME` in `lib/config.ts` mirrors the backgrounds and accent.
+- **Color:** warm paper background (`#f8f6f1`, dark `#151311`), warm ink text (`#211d18`, dark `#f3efe8`), one **basil-green accent** (`#2f6b3f`, dark `#8cc596`) used only for interactive elements and active kudos. A second, **terracotta** pair marks eating out (Phase 6.8): `out` (`#a8471f`, dark `#e8916d`) and `out-soft` (`#f7e6dc`, dark `#3a2117`), for the "Ate out" label and displayed stars only, never for controls (the star input on the Log form is basil). AA: `out` is 5.42/5.86/4.93/4.83 on background/surface/sunken/out-soft in light, 7.68/7.10/8.05/6.17 in dark. Plus `surface` (inputs, dialogs), `sunken` (bands between feed cards and sections, photo placeholders), `muted`, `border`, `accent-soft` (toggled-on state), `danger`. Every text pair meets WCAG AA in both schemes. Dark mode is its own palette, not an inversion. No gradients, no decorative illustration. `THEME` in `lib/config.ts` mirrors the backgrounds and accent.
 - **Type:** Young Serif (self-hosted via `next/font`) for display only: the wordmark, page titles, dish names, section titles, stat figures and empty-state headings. The system sans for everything else. Use the named scale (`text-hero`, `stat`, `title`, `dish`, `lead`, `body`, `small`, `caption`); Tailwind's default sizes are switched off. No all-caps labels.
 - **Icons:** `lucide-react` only. Kudos is a chef's hat (`ChefHat`).
 - **Primitives:** `button({ variant, size, full })` with the variants primary, secondary, selected (a toggle that's on), quiet (accent text), subtle (muted text), danger and destructive; `chip(selected)`; `input`; `FieldLabel`; `ErrorText`; `EmptyState`; `PageHeader` (sticky, serif title, optional back button and right-hand action). Don't hand-roll sizes, colors or radii in components (radii: `rounded-control`, `rounded-sheet`, `rounded-full`).
 - Feed card: author row (avatar, name, then meal type and relative time underneath), then photos edge to edge on mobile (swipeable carousel with a pill of dots when there's more than one; crop to at most 4:5 in the feed, show the full aspect ratio on detail), then the dish name in the serif, the note truncated to 3 lines, and kudos/comment counts as icons. Cards are separated by an 8px `sunken` band, not hairlines.
 - Cook detail: the same author row, all photos, the dish name at `title` size, "Cooked …", the full note, then kudos and comments in banded sections. Deleting your own cook is a quiet icon in the header.
-- Profile: serif name, handle, stats as large serif figures with a small label ("cooks this week"), then the follow button (or, on your own, "Find people from Bluesky" and a quiet "Sign out").
+- Profile: serif name, handle, stats as large serif figures with a small label ("cooks this week"), the eating-out line when there is one (`UtensilsCrossed` in `out`, "Ate out 2 this week · 5 this month" in `muted`), then the follow button (or, on your own, "Find people from Bluesky" and a quiet "Sign out").
 - Bottom tab bar: five labelled tabs, **Feed** (`Rows3`), **Search** (`Search`), **Log** (`Plus`, primary, a filled accent pill, in the middle), **Best** (`Trophy`), **Profile** (`User`); each ≥ 44px wide at 375px and active on its own routes. Feed reopens whichever feed you last used. Best opens the viewer's current month (resolved in the browser). The feed header is a two-segment switch, Following | Global; the two feeds stay separate pages (`/following`, `/global`).
-- Search: a sticky header with the field (search icon, clear button) and a horizontally scrolling row of meal `chip()`s ("All" first). Before typing, an `EmptyState` hint. People rows (avatar 44, name, handle) above standard feed cards; no people while a meal is picked.
+- Search: dish names, restaurant names and areas, and people ("Dishes, restaurants or people"); cooks and visits in one list. A sticky header with the field (search icon, clear button) and a horizontally scrolling row of meal `chip()`s ("All" first). Before typing, an `EmptyState` hint. People rows (avatar 44, name, handle) above standard feed cards; no people while a meal is picked.
 - Best: a sticky month switcher (‹ September 2026 ›, serif), a muted status line ("Leading so far…" for a running month), then one row per meal type: a 104px rounded photo, the meal name (small, muted), the dish in the serif, the author (avatar 24) and the kudos count (`ChefHat`); categories without a winner are a quiet "No winner yet" row. A month with no winners is an `EmptyState` pointing to the global feed.
+- Visit card (Phase 6.8): the same author row, but the meal type and the visit's **date** (`VisitDate`: "Today", "Yesterday", "Wed 14 Oct", with the year when not this year; never a time), the "Ate out" pill (`AteOutLabel`: `UtensilsCrossed` + text in `out` on `out-soft`, `rounded-full`) at the right of the author row, the same photo carousel, the restaurant in the serif with the area in `muted` under it, five `Star`s filled to the rating in `out` (`Stars`, `aria-label="4 out of 5 stars"`), the review cut to 3 lines, then `CardActions`.
+- Visit page (Phase 6.8): like cook detail, with the "Ate out" pill in the author row, the restaurant at `title` size, the area, larger stars, "Visited Wed 14 Oct" and the full review. Signed out: the same read-only treatment as the cook page.
+- Log (Phase 6.8): a two-segment switch at the top, **Cooked it | Ate out** (default Cooked it, remembered for the session); photos, meal type and date survive switching. Ate out shows Restaurant, Area (optional), Rating (`StarRating`: a radiogroup of five 44px stars, arrow keys/Home/End, one tab stop), Review (optional, count near the limit) and When.
 - Feed card actions (Phase 6.7): under the dish name, the kudos toggle (a 44px icon button: `ChefHat` and the count, muted when off, accent with a filled hat when on, dimmed while saving, an inline error under the row on failure; a plain count on your own cook) and the comment count (a link to the cook). They sit outside the card's link. The viewer's confirmed toggles are remembered for the session (`useKudosToggle`), so cards and the cook page agree after Back.
 - Pull to refresh (Phase 6.7) on feeds and profiles: pulling down at the top opens a gap above the list with a 40px round `surface` badge holding a `RefreshCw` that turns with the pull (muted), turns accent past the threshold, and spins while the first page reloads ("Refreshing…" instead of spinning under reduced motion). A failure shows an inline error; the list stays.
 - Badges: a `Trophy` line, "Best dinner, Sep 2026" (`text-small`, semibold, ink), above the dish name on feed cards and the detail page. Profiles list wins as `chip(false)` links under the stats.

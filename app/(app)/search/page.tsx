@@ -4,7 +4,7 @@ import { getDid } from "@/lib/auth/session";
 import { searchPosts, searchPeople } from "@/lib/db/queries";
 import { normalizeMeal, normalizeQuery } from "@/lib/search";
 
-// Search dish names and people (Phase 6.6). The query lives in the URL
+// Search dish names, restaurants (Phase 6.8) and people (Phase 6.6). The query lives in the URL
 // (?q=&meal=), so Back and shared links keep it; a URL with a query is
 // rendered with its first page of results.
 export default async function SearchPage({ searchParams }: PageProps<"/search">) {

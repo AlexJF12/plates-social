@@ -7,11 +7,26 @@ import { TID } from "@atproto/common-web";
 import { datetimeLocalInputToCookedAt, toDatetimeLocalInput } from "@/lib/cook/datetime";
 import { MEAL_TYPES } from "@/lib/cook/mealTypes";
 import { processImage } from "@/lib/image/process";
+import { cookPath, visitPath } from "@/lib/links";
+import { startReauth } from "./reauth";
+import { StarRating } from "./StarRating";
 import { ErrorText, FieldLabel, button, chip, input } from "./ui";
 
 const MAX_PHOTOS = 4;
 const DISH_MAX = 100;
 const NOTE_MAX = 1000;
+// Visits (§4): restaurant name and area ≤ 100 graphemes, review ≤ 1000.
+const PLACE_MAX = 100;
+const REVIEW_MAX = 1000;
+
+// What's being logged: a cook, or a meal eaten out (Phase 6.8).
+type Mode = "cook" | "visit";
+const MODES: { value: Mode; label: string }[] = [
+  { value: "cook", label: "Cooked it" },
+  { value: "visit", label: "Ate out" },
+];
+// The last mode, for the rest of this session (sessionStorage).
+const MODE_KEY = "logMode";
 // Unreferenced blobs are garbage-collected by the PDS, so don't reuse an
 // uploaded blob on retry after this long; upload it again instead.
 const BLOB_REUSE_MS = 10 * 60 * 1000;
@@ -27,7 +42,9 @@ type Phase =
   | { kind: "idle" }
   | { kind: "uploading"; index: number; total: number; percent: number }
   | { kind: "posting" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  // An old session without the visit scope (Phase 6.8).
+  | { kind: "reauth" };
 
 const segmenter =
   typeof Intl !== "undefined" && "Segmenter" in Intl
@@ -55,8 +72,19 @@ function uploadPhoto(blob: Blob, onProgress: (loaded: number) => void) {
   });
 }
 
-export function LogCookForm() {
+// The Log screen: a cook, or (switch at the top) a meal eaten out. Both
+// share the photos, meal type and date, which survive switching modes.
+export function LogForm({ viewerDid }: { viewerDid: string }) {
   const router = useRouter();
+  const [mode, setModeState] = useState<Mode>("cook");
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = sessionStorage.getItem(MODE_KEY);
+    } catch {}
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage is only readable after hydration
+    if (saved === "visit") setModeState("visit");
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [processing, setProcessing] = useState(false);
@@ -64,6 +92,10 @@ export function LogCookForm() {
   const [dishName, setDishName] = useState("");
   const [mealType, setMealType] = useState("");
   const [note, setNote] = useState("");
+  const [restaurantName, setRestaurantName] = useState("");
+  const [restaurantArea, setRestaurantArea] = useState("");
+  const [rating, setRating] = useState(0);
+  const [review, setReview] = useState("");
   // Filled in on mount: "now" must be the phone's local time, not the
   // server's (the server renders this form in its own time zone).
   const [cookedAtInput, setCookedAtInput] = useState("");
@@ -72,8 +104,18 @@ export function LogCookForm() {
     setCookedAtInput((v) => v || toDatetimeLocalInput(new Date()));
   }, []);
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
-  // One rkey per post, kept across retries so a retry can't duplicate it.
-  const rkey = useRef<string | null>(null);
+  // One rkey per post (per mode), kept across retries so a retry can't
+  // duplicate it.
+  const rkeys = useRef<Partial<Record<Mode, string>>>({});
+
+  // Switching keeps the photos, meal type and date.
+  function setMode(m: Mode) {
+    setModeState(m);
+    try {
+      sessionStorage.setItem(MODE_KEY, m);
+    } catch {}
+    if (phase.kind === "error" || phase.kind === "reauth") setPhase({ kind: "idle" });
+  }
 
   // Revoke preview URLs when the form goes away.
   const photosRef = useRef(photos);
@@ -86,15 +128,15 @@ export function LogCookForm() {
   const cookedAt = datetimeLocalInputToCookedAt(cookedAtInput);
   const dishLen = graphemes(dishName.trim());
   const noteLen = graphemes(note.trim());
+  const nameLen = graphemes(restaurantName.trim());
+  const areaLen = graphemes(restaurantArea.trim());
+  const reviewLen = graphemes(review.trim());
+  const fieldsOk =
+    mode === "cook"
+      ? dishLen > 0 && dishLen <= DISH_MAX && noteLen <= NOTE_MAX
+      : nameLen > 0 && nameLen <= PLACE_MAX && areaLen <= PLACE_MAX && rating >= 1 && reviewLen <= REVIEW_MAX;
   const canSubmit =
-    !busy &&
-    !processing &&
-    photos.length > 0 &&
-    dishLen > 0 &&
-    dishLen <= DISH_MAX &&
-    noteLen <= NOTE_MAX &&
-    mealType !== "" &&
-    cookedAt !== null;
+    !busy && !processing && photos.length > 0 && fieldsOk && mealType !== "" && cookedAt !== null;
 
   async function onFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -128,7 +170,7 @@ export function LogCookForm() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
-    rkey.current ??= TID.nextStr();
+    const rkey = (rkeys.current[mode] ??= TID.nextStr());
 
     // Upload photos not yet uploaded (or uploaded too long ago). Results are
     // kept on each photo so a retry picks up where this attempt stopped.
@@ -153,33 +195,35 @@ export function LogCookForm() {
       }
 
       setPhase({ kind: "posting" });
-      const res = await fetch("/api/cook", {
+      const images = current.map((p) => ({
+        blob: p.uploaded!.blob,
+        width: p.uploaded!.width,
+        height: p.uploaded!.height,
+      }));
+      const fields =
+        mode === "cook"
+          ? { dishName, note, cookedAt }
+          : { restaurantName, restaurantArea, rating, review, visitedAt: cookedAt };
+      const res = await fetch(`/api/${mode}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rkey: rkey.current,
-          dishName,
-          mealType,
-          note,
-          cookedAt,
-          images: current.map((p) => ({
-            blob: p.uploaded!.blob,
-            width: p.uploaded!.width,
-            height: p.uploaded!.height,
-          })),
-        }),
+        body: JSON.stringify({ rkey, mealType, ...fields, images }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 403 && data.reauth) {
+        setPhase({ kind: "reauth" });
+        return;
+      }
       if (!res.ok) throw new Error(data.error || `Posting failed (${res.status})`);
 
-      // at://did/collection/rkey -> the new cook's page.
+      // at://did/collection/rkey -> the new post's page.
       const [, , did, , rk] = String(data.uri).split("/");
-      router.push(`/cook/${did}/${rk}`);
+      router.push((mode === "cook" ? cookPath : visitPath)(did, rk));
       router.refresh();
     } catch (err) {
       const message =
         err instanceof TypeError
-          ? "Network error. Your cook wasn't posted."
+          ? `Network error. Your ${mode} wasn't posted.`
           : err instanceof Error
             ? err.message
             : "Something went wrong";
@@ -194,10 +238,38 @@ export function LogCookForm() {
         ? "Posting…"
         : phase.kind === "error"
           ? "Retry"
-          : "Post cook";
+          : mode === "cook"
+            ? "Post cook"
+            : "Post visit";
+
+  async function signInAgain() {
+    setPhase({ kind: "posting" });
+    try {
+      await startReauth(viewerDid, "/log");
+    } catch {
+      setPhase({ kind: "error", message: "Couldn't start sign-in. Try again." });
+    }
+  }
 
   return (
     <form onSubmit={submit} className="space-y-7">
+      <div role="group" aria-label="What to log" className="grid grid-cols-2 rounded-full bg-sunken p-0.5">
+        {MODES.map((m) => (
+          <button
+            key={m.value}
+            type="button"
+            aria-pressed={mode === m.value}
+            onClick={() => setMode(m.value)}
+            disabled={busy}
+            className={`flex h-11 items-center justify-center rounded-full text-body font-semibold transition-colors duration-150 ${
+              mode === m.value ? "bg-surface text-foreground" : "text-muted active:text-foreground"
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
+
       <section aria-label="Photos">
         {photos.length === 0 ? (
           <button
@@ -259,23 +331,68 @@ export function LogCookForm() {
         {photoError && <ErrorText className="mt-2">{photoError}</ErrorText>}
       </section>
 
-      <label className="block">
-        <FieldLabel>Dish</FieldLabel>
-        <input
-          type="text"
-          name="dishName"
-          value={dishName}
-          onChange={(e) => setDishName(e.target.value)}
-          placeholder="What did you cook?"
-          disabled={busy}
-          className={`${input} h-12`}
-        />
-        {dishLen > DISH_MAX && (
-          <span className="mt-1 block text-caption text-danger">
-            {dishLen}/{DISH_MAX} characters
-          </span>
-        )}
-      </label>
+      {mode === "cook" ? (
+        <label className="block">
+          <FieldLabel>Dish</FieldLabel>
+          <input
+            type="text"
+            name="dishName"
+            value={dishName}
+            onChange={(e) => setDishName(e.target.value)}
+            placeholder="What did you cook?"
+            disabled={busy}
+            className={`${input} h-12`}
+          />
+          {dishLen > DISH_MAX && (
+            <span className="mt-1 block text-caption text-danger">
+              {dishLen}/{DISH_MAX} characters
+            </span>
+          )}
+        </label>
+      ) : (
+        <>
+          <label className="block">
+            <FieldLabel>Restaurant</FieldLabel>
+            <input
+              type="text"
+              name="restaurantName"
+              value={restaurantName}
+              onChange={(e) => setRestaurantName(e.target.value)}
+              placeholder="Where did you eat?"
+              disabled={busy}
+              className={`${input} h-12`}
+            />
+            {nameLen > PLACE_MAX && (
+              <span className="mt-1 block text-caption text-danger">
+                {nameLen}/{PLACE_MAX} characters
+              </span>
+            )}
+          </label>
+          <label className="block">
+            <FieldLabel optional>Area</FieldLabel>
+            <input
+              type="text"
+              name="restaurantArea"
+              value={restaurantArea}
+              onChange={(e) => setRestaurantArea(e.target.value)}
+              placeholder="Neighbourhood or city"
+              disabled={busy}
+              className={`${input} h-12`}
+            />
+            {areaLen > PLACE_MAX && (
+              <span className="mt-1 block text-caption text-danger">
+                {areaLen}/{PLACE_MAX} characters
+              </span>
+            )}
+          </label>
+          <fieldset>
+            <legend className="p-0">
+              <FieldLabel>Rating</FieldLabel>
+            </legend>
+            <StarRating value={rating} onChange={setRating} disabled={busy} />
+          </fieldset>
+        </>
+      )}
 
       <fieldset>
         <legend className="p-0">
@@ -297,26 +414,46 @@ export function LogCookForm() {
         </div>
       </fieldset>
 
-      <label className="block">
-        <FieldLabel optional>Note</FieldLabel>
-        <textarea
-          name="note"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          rows={4}
-          disabled={busy}
-          placeholder="How did it turn out? What would you change?"
-          className={`${input} block resize-none py-3`}
-        />
-        {noteLen > NOTE_MAX * 0.9 && (
-          <span className={`mt-1 block text-caption tabular-nums ${noteLen > NOTE_MAX ? "text-danger" : "text-muted"}`}>
-            {noteLen}/{NOTE_MAX}
-          </span>
-        )}
-      </label>
+      {mode === "cook" ? (
+        <label className="block">
+          <FieldLabel optional>Note</FieldLabel>
+          <textarea
+            name="note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={4}
+            disabled={busy}
+            placeholder="How did it turn out? What would you change?"
+            className={`${input} block resize-none py-3`}
+          />
+          {noteLen > NOTE_MAX * 0.9 && (
+            <span className={`mt-1 block text-caption tabular-nums ${noteLen > NOTE_MAX ? "text-danger" : "text-muted"}`}>
+              {noteLen}/{NOTE_MAX}
+            </span>
+          )}
+        </label>
+      ) : (
+        <label className="block">
+          <FieldLabel optional>Review</FieldLabel>
+          <textarea
+            name="review"
+            value={review}
+            onChange={(e) => setReview(e.target.value)}
+            rows={4}
+            disabled={busy}
+            placeholder="What did you have? Would you go back?"
+            className={`${input} block resize-none py-3`}
+          />
+          {reviewLen > REVIEW_MAX * 0.9 && (
+            <span className={`mt-1 block text-caption tabular-nums ${reviewLen > REVIEW_MAX ? "text-danger" : "text-muted"}`}>
+              {reviewLen}/{REVIEW_MAX}
+            </span>
+          )}
+        </label>
+      )}
 
       <label className="block">
-        <FieldLabel>Cooked</FieldLabel>
+        <FieldLabel>{mode === "cook" ? "Cooked" : "When"}</FieldLabel>
         <input
           type="datetime-local"
           name="cookedAt"
@@ -328,6 +465,17 @@ export function LogCookForm() {
       </label>
 
       {phase.kind === "error" && <ErrorText>{phase.message}</ErrorText>}
+      {phase.kind === "reauth" && (
+        <div className="space-y-2 rounded-control bg-sunken p-4" role="alert">
+          <p className="text-small">
+            Posting visits needs a new permission. Sign in again to allow it, then post this again (the photos
+            will need adding again).
+          </p>
+          <button type="button" onClick={signInAgain} className={button({ variant: "secondary", full: true })}>
+            Sign in again
+          </button>
+        </div>
+      )}
 
       <button type="submit" disabled={!canSubmit} className={`${button({ size: "lg", full: true })} relative overflow-hidden`}>
         {phase.kind === "uploading" && (

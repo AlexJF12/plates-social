@@ -174,6 +174,37 @@ describe("indexEvent: replaying an event changes nothing", () => {
     });
   });
 
+  it("a rebuild (wipe, then Tap redelivers everything) gives back the same rows, visits included", async () => {
+    await inRollback(async (db) => {
+      const evts = events().slice(0, 8);
+      for (const [, evt] of evts) await indexEvent(db, evt);
+      const strip = (snap: Awaited<ReturnType<typeof snapshot>>) =>
+        Object.fromEntries(
+          Object.entries(snap).map(([t, rows]) => [
+            t,
+            rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => k !== "indexedAt" && k !== "updatedAt"))),
+          ]),
+        );
+      const before = await snapshot(db);
+      expect(before.visit).toHaveLength(1);
+      // scripts/rebuild-index.mts truncates these tables; here, only the test DIDs' rows.
+      for (const t of ["cook", "visit", "kudos", "comment", "follow"] as const) {
+        await db.deleteFrom(t).where("authorDid", "in", DIDS).execute();
+      }
+      await db.deleteFrom("account").where("did", "in", DIDS).execute();
+      expect((await snapshot(db)).visit).toEqual([]);
+      for (const [, evt] of evts) await indexEvent(db, evt);
+      // sortAt is min(createdAt, indexedAt): the future-dated test records
+      // get the replay's time, so compare everything else.
+      const norm = (snap: Awaited<ReturnType<typeof snapshot>>) => {
+        const out = strip(snap);
+        for (const t of ["visit", "comment", "cook"]) for (const r of out[t]) delete r.sortAt;
+        return out;
+      };
+      expect(norm(await snapshot(db))).toEqual(norm(before));
+    });
+  });
+
   it("Tap delivering a cook after the read-your-own-writes upsert is a no-op", async () => {
     await inRollback(async (db) => {
       const record = cook.$parse(jsonToLex(cookJson()));

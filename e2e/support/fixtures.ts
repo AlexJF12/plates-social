@@ -29,6 +29,7 @@ export const EARLIEST_MONTH = "2025-05";
 export const MIRA_COOKS = 24;
 
 export const cookUri = (did: string, rkey: string) => `at://${did}/com.example.cooklog.cook/${rkey}`;
+export const visitUri = (did: string, rkey: string) => `at://${did}/com.example.cooklog.visit/${rkey}`;
 export const rk = (name: string) => `${RKEY_PREFIX}${name}`;
 
 export function loadEnv() {
@@ -92,6 +93,18 @@ type Img = { cid: string; width: number; height: number };
 
 type CookSpec = { author: string; rkey: string; dish: string; meal: string; cookedAt: string; img: Img; note?: string };
 
+type VisitSpec = {
+  author: string;
+  rkey: string;
+  name: string;
+  area?: string;
+  rating: number;
+  review?: string;
+  meal: string;
+  visitedAt: string;
+  imgs: Img[];
+};
+
 // Fixture images, rendered once per run with Chromium (it has a color
 // emoji font; sharp's SVG renderer doesn't).
 async function renderImages() {
@@ -125,6 +138,11 @@ async function renderImages() {
     tart: await dish("🍋", "#f5ecb8", 1200, 1500),
     toast: await dish("🍞", "#eadfcf", 1600, 1200),
     dal: await dish("🍛", "#f2cfd6", 1400, 1400),
+    // Visits (Phase 6.8).
+    pasta: await dish("🍝", "#f0d6c8", 1200, 1500),
+    burrito: await dish("🌯", "#efe0c4", 1600, 1200),
+    cocktail: await dish("🍸", "#d8e2ee", 1200, 1500),
+    oysters: await dish("🦪", "#dfe8ea", 1400, 1400),
   };
   const avatars = {
     viewer: await avatar("👩🏼‍🍳", "#d4ecea"),
@@ -208,6 +226,36 @@ export async function createFixtures(pool: Pool) {
       [`at://${author}/com.example.cooklog.comment/${rk(`c${i}`)}`, author, cookUri(MIRA.did, rk("ribs")), text, at],
     );
   }
+  // Visits (Phase 6.8). Mira's Lilia, in BEST_MONTH, has more kudos than any
+  // cook but must never show on the Best tab. Tomás's is for card kudos;
+  // the viewer's (today) is for delete and the eating-out line.
+  const visits: VisitSpec[] = [
+    {
+      author: MIRA.did,
+      rkey: rk("lilia"),
+      name: "Lilia",
+      area: "Williamsburg, Brooklyn",
+      rating: 5,
+      review: "The sheep's milk agnolotti with saffron and honey. Booked a month out and worth it. Ask for the counter.",
+      meal: "dinner",
+      visitedAt: "2025-06-16T20:30:00-04:00",
+      imgs: [images.pasta, images.oysters],
+    },
+    { author: TOMAS.did, rkey: rk("cuates"), name: "Taquería Los Cuates", area: "Oakland", rating: 4, meal: "lunch", visitedAt: "2025-06-13T13:00:00-07:00", imgs: [images.burrito] },
+    { author: VIEWER.did, rkey: rk("carota"), name: "Via Carota", area: "West Village", rating: 3, review: "Negronis were good, the room was loud.", meal: "drinks", visitedAt: `${today}T00:10:00Z`, imgs: [images.cocktail] },
+  ];
+  for (const v of visits) await insertVisit(pool, v);
+  for (const [i, author] of [TOMAS.did, KAI.did, VIEWER.did].entries()) {
+    await pool.query(
+      `insert into kudos (uri, "authorDid", "subjectUri", "subjectCid", "createdAt") values ($1, $2, $3, $4, now())`,
+      [`at://${author}/com.example.cooklog.kudos/${rk(`vk${i}`)}`, author, visitUri(MIRA.did, rk("lilia")), CID],
+    );
+  }
+  await pool.query(
+    `insert into comment (uri, "authorDid", "subjectUri", text, "createdAt", "sortAt") values ($1, $2, $3, $4, $5, $5)`,
+    [`at://${KAI.did}/com.example.cooklog.comment/${rk("vc0")}`, KAI.did, visitUri(MIRA.did, rk("lilia")), "Adding it to my list.", new Date(Date.UTC(2025, 5, 17, 9))],
+  );
+
   await pool.query(`insert into follow (uri, "authorDid", "subjectDid", "createdAt") values ($1, $2, $3, now())`, [
     `at://${VIEWER.did}/com.example.cooklog.follow/${rk("f0")}`,
     VIEWER.did,
@@ -241,14 +289,39 @@ export async function insertCook(pool: Pool, c: CookSpec, sortAt?: Date) {
   );
 }
 
+export async function insertVisit(pool: Pool, v: VisitSpec, sortAt?: Date) {
+  const at = new Date(v.visitedAt);
+  await pool.query(
+    `insert into visit (uri, cid, "authorDid", "restaurantName", "restaurantArea", rating, review, "mealType", images, "visitedAt", "visitedAtUtc", "visitedLocalDate", "createdAt", "indexedAt", "sortAt")
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $11, $11, $13)`,
+    [
+      visitUri(v.author, v.rkey),
+      CID,
+      v.author,
+      v.name,
+      v.area ?? null,
+      v.rating,
+      v.review ?? null,
+      v.meal,
+      JSON.stringify(v.imgs.map((img) => ({ cid: img.cid, mime: "image/jpeg", alt: `${v.name} (illustration)`, aspectRatio: { width: img.width, height: img.height } }))),
+      v.visitedAt,
+      at,
+      v.visitedAt.slice(0, 10),
+      sortAt ?? at,
+    ],
+  );
+}
+
 // Every fixture row, and the cached images only fixtures use. Safe to run
 // any time (setup runs it first, in case an earlier run was killed).
 export async function removeFixtures(pool: Pool) {
   const { rows } = await pool.query<{ cid: string }>(
     `select "avatarCid" as cid from account where did like $1 and "avatarCid" is not null
      union select i->>'cid' from cook, jsonb_array_elements(images) i where "authorDid" like $1
+     union select i->>'cid' from visit, jsonb_array_elements(images) i where "authorDid" like $1
      except (select "avatarCid" from account where did not like $1 and "avatarCid" is not null
-             union select i->>'cid' from cook, jsonb_array_elements(images) i where "authorDid" not like $1)`,
+             union select i->>'cid' from cook, jsonb_array_elements(images) i where "authorDid" not like $1
+             union select i->>'cid' from visit, jsonb_array_elements(images) i where "authorDid" not like $1)`,
     [`${DID_PREFIX}%`],
   );
   const like = `${DID_PREFIX}%`;
@@ -257,6 +330,7 @@ export async function removeFixtures(pool: Pool) {
   await pool.query(`delete from comment where uri like $2 or "authorDid" like $1 or "subjectUri" like 'at://' || $1`, [like, marker]);
   await pool.query(`delete from follow where uri like $2 or "authorDid" like $1 or "subjectDid" like $1`, [like, marker]);
   await pool.query(`delete from cook where uri like $2 or "authorDid" like $1`, [like, marker]);
+  await pool.query(`delete from visit where uri like $2 or "authorDid" like $1`, [like, marker]);
   await pool.query(`delete from login where did like $1`, [like]);
   await pool.query(`delete from account where did like $1`, [like]);
   const dir = cacheDir();

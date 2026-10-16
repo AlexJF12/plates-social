@@ -71,6 +71,12 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - A module-level `test.beforeEach` in a shared helper only attaches to the first spec file that imports it; use an `{ auto: true }` fixture instead.
 - Touch gestures in Playwright: `Input.dispatchTouchEvent` through a CDP session (Chromium), as in `e2e/signed-in/feeds.spec.ts`.
 - Kudos toggles go through `useKudosToggle` (shared store): never keep a separate "given" state in a component.
+- Feeds and search return `FeedItem`s (`kind: "cook" | "visit"`) from `feedPage` in `lib/db/queries.ts` (a `UNION ALL` of keys, then one query per kind). A new feed filter goes in `feedKeys` for both kinds; a page stays 4 queries (`lib/db/feed.test.ts` counts them).
+- Kudos and comments take a cook *or* a visit: look subjects up with `getVisiblePost`, never a cook-only query. The API body field is still called `cook`.
+- Visits never expose a time: `VisitView` has `visitedLocalDate` only, shown with `formatVisitDate`/`VisitDate`. Don't add `visitedAt` to a view or an API response.
+- `out`/`out-soft` (terracotta) mark eating out and displayed stars only; controls (including the star input) stay basil.
+- Writes that need a scope older sessions lack return `403 { reauth: true }`; the UI calls `startReauth(viewerDid, next)` (`components/reauth.ts`).
+- In cloud sessions the e2e global setup's own `chromium.launch()` needs the `/opt/pw-browsers/chromium` path too: patch it locally for the run and revert it (don't commit).
 
 ---
 

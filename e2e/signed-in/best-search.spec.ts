@@ -34,7 +34,7 @@ test("Best: winners per meal, month limits, badges", async ({ page }) => {
 
 test("Search: dishes, people, meal chips, paging, Back keeps the query", async ({ page }) => {
   await page.goto("/search");
-  await expect(page.getByRole("heading", { name: "Find a cook" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Find food and people" })).toBeVisible();
   const box = page.getByRole("searchbox");
 
   await box.fill("galette");
@@ -46,7 +46,7 @@ test("Search: dishes, people, meal chips, paging, Back keeps the query", async (
 
   await box.fill("galette");
   await page.getByRole("button", { name: "Dinner" }).click();
-  await expect(page.getByRole("heading", { name: "No cooks match with this meal" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Nothing matches with this meal" })).toBeVisible();
   await page.getByRole("button", { name: "Search all meals" }).click();
   await expect(page.getByTestId("cook-card")).toHaveCount(7);
 

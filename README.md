@@ -38,7 +38,7 @@ In this mode the app is an atproto *loopback* OAuth client: no keys and no hoste
 
 `scripts/tap.sh` runs Tap with:
 
-- `--signal-collection=<NS>.cook` — auto-discover every account that has posted a cook
+- `--signal-collection=<NS>.cook` — auto-discover every account that has posted a cook. Tap takes only one signal collection, so an account that has only posted visits is found when it signs in here (login calls `/repos/add`), not before.
 - `--collection-filters=<NS>.*,app.bsky.actor.profile` — only deliver our records and profiles
 - `--admin-password` — required on every Tap request, and on Tap's webhook calls to us
 - SQLite state in `.tap-data/` (delete it to make Tap forget everything)
@@ -112,7 +112,7 @@ pnpm test:e2e     # Playwright at 375px; needs pnpm dev running. Screenshots in 
 
 `e2e/signed-in/` covers the signed-in screens (feeds, card kudos, pull to refresh, cook page, comments, delete dialogs, log, profile, Best, search, not-found). It needs `pnpm dev` running, the local Postgres (`pnpm db:up`), and `DATABASE_URL` + `SESSION_SECRET` in `.env.local`. Without those it skips (with a message) and the signed-out tests still run.
 
-- **Fixtures:** `e2e/global-setup.ts` inserts local-only rows (`e2e/support/fixtures.ts`): five accounts whose DIDs start with `did:plc:e2e`, 31 cooks, kudos, comments and a follow, every record rkey starting `3mwe2e`. Their photos and avatars are emoji images rendered with Chromium and written into `.cache/img/` under their CIDs. `e2e/global-teardown.ts` deletes all of it, and setup first deletes leftovers from a killed run.
+- **Fixtures:** `e2e/global-setup.ts` inserts local-only rows (`e2e/support/fixtures.ts`): five accounts whose DIDs start with `did:plc:e2e`, 31 cooks, 3 visits, kudos, comments and a follow, every record rkey starting `3mwe2e`. Their photos and avatars are emoji images rendered with Chromium and written into `.cache/img/` under their CIDs. `e2e/global-teardown.ts` deletes all of it, and setup first deletes leftovers from a killed run.
 - **Signing in:** each test mints a session cookie for a fixture DID from `SESSION_SECRET`, in the test process only. Never your own DID.
 - **No writes leave the machine:** every POST/DELETE to `/api/kudos`, `/api/comment`, `/api/cook`, `/api/blob`, `/api/follow` and `/api/share/bluesky` must be stubbed by the test (`stubWrite` in `e2e/support/signedIn.ts`); anything unstubbed is aborted and fails the test.
 - **Cleaning up by hand** (if a run was killed and you won't run the suite again soon):
