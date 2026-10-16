@@ -1,6 +1,6 @@
 # Progress
 
-## Phase 6.8 — Eating out (restaurant visits with reviews) — ⏸ at checkpoint B: built and tested locally; live PDS/Tap checks and the iPhone review are the human's
+## Phase 6.8 — Eating out (restaurant visits with reviews) — PR opened at checkpoint B (2026-10-16); live PDS/Tap checks and the iPhone review still pending (the human will run them on the laptop)
 
 Branch: `feature/phase-6.8` (from main after PR #15). Checkpoint A (Lexicon + migration) approved by the human 2026-10-16. Spec: §2.1, §2.2, §4, §5, §6, §7 updated.
 
@@ -72,7 +72,7 @@ Stars are graphics (3:1 needed); the label text is ≥ 4.5 everywhere it sits.
 
 ### Next step
 
-Human runs the checkpoint B checks above and reviews on the iPhone. Then open the PR for `feature/phase-6.8`. Phase 7 stays blocked on the domain and the new name.
+The human chose to open the PR before the live checks (as with Sharing) and will run the checkpoint B checks above from the laptop, then review on the iPhone via the tunnel. Until then, the real write, `getRecord`, Tap delivery, the `repo:NS.visit` re-consent and a real rebuild with a visit are unverified. Phase 7 stays blocked on the domain and the new name.
 
 ## Sharing (human-requested, outside the phase plan) — merged (PR #12, 2026-10-12); Bluesky posting verified live, share sheet and signed-out link still to try
 
