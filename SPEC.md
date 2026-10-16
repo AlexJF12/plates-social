@@ -126,7 +126,7 @@ Write these as Lexicon JSON files under `lexicons/`, generate types with `lex bu
 | Field | Type | Rules |
 |---|---|---|
 | `dishName` | string | required, 1–100 graphemes |
-| `mealType` | string | required, `knownValues`: `breakfast`, `lunch`, `dinner`, `snack`, `bread`, `dessert`. Display unknown values as "Other"; don't reject them. |
+| `mealType` | string | required, `knownValues`: `breakfast`, `lunch`, `dinner`, `snack`, `bread`, `dessert`, `drinks` (`drinks` added in Phase 6.8). Display unknown values as "Other"; don't reject them. |
 | `note` | string | optional, max 1000 graphemes |
 | `images` | array of `#image` | required, minLength 1, maxLength 4 |
 | `cookedAt` | datetime | required. The client writes local time **with its UTC offset** (e.g. `2026-09-29T19:30:00-04:00`); §6.4 depends on this. |
@@ -359,12 +359,22 @@ Each phase ends with a **checkpoint** (§0.1) and a `PROGRESS.md` handoff (§0.8
 
 Decided with the human (2026-10-12): a **mixed feed with distinct cards** (not a separate feed or tab); restaurants are **free text** (name + optional area, no places service); the review is a **1–5 star rating plus optional written text**. Defaults the human may still change at the first checkpoint: photos required (1–4, like cooks); the record is named `visit`; the second accent is a warm terracotta.
 
+Decided with the human (2026-10-16 interview):
+- **Before launch**, as planned: Phase 7 waits for this phase.
+- **The product widens to all the food you eat**, not only cooking. Reasons: the human eats out and wants to log it, testers asked for it, more posts keep a small feed alive, and restaurant recommendations are a later goal. So the placeholder name "Cooklog" is likely to change to something food-wide before Phase 7 (see Phase 7).
+- **Restaurants stay free text, with no grouping.** Accepted trade-off: recommendations or restaurant pages in a later phase may never group old free-text reviews cleanly.
+- **Rating required** (1–5) and **photos required** (1–4), as specced.
+- **Stats get a separate eating-out count** (step 11). Best stays cooks only.
+- **Visits show the date only, never a time** (steps 7–8). A visit posted at the table shouldn't tell the feed where the author is right now. The record on the PDS still carries `visitedAt` and `createdAt`; this only stops casual viewers.
+- **A new meal type `drinks`**, for cooks and visits alike (step 1).
+
 **Not in this phase:** restaurant pages or linking reviews of the same place, a places/maps lookup, price level, dishes ordered, restaurant stats or a "Best restaurant", and text-only reviews.
 
 1. **Lexicon and schema (checkpoint A).**
    - Write `lexicons/com/example/cooklog/visit.json` per §4 (reuse `NS.cook#image`), and update the `kudos` and `comment` descriptions to say "a cook or a visit" (descriptions only; the schemas don't change). `pnpm lex:build`, import only via `lib/lexicons.ts`, add `COLLECTIONS.visit`.
+   - Meal type `drinks`: add it to `knownValues` in `cook.json` and `visit.json` (adding a known value is backwards compatible) and to `MEAL_TYPES` (label "Drinks", lucide icon in keeping with the others). The Log chips, search chips and Best (per known meal type, so Best now has a Drinks category) pick it up from there.
    - Migration `005_visit` (additive): a `visit` table mirroring `cook` (`uri` PK, `cid`, `authorDid`, `restaurantName`, `restaurantArea`, `rating` smallint, `review`, `mealType`, `images` jsonb, `visitedAt` text, `visitedAtUtc`, `visitedLocalDate` date, `createdAt`, `indexedAt`, `sortAt` = min(createdAt, indexedAt), all `timestamptz`). Indexes as for `cook`: `(sortAt desc, uri desc)`, `(authorDid, sortAt desc, uri desc)`, plus a `pg_trgm` GIN on `immutable_unaccent("restaurantName" || ' ' || coalesce("restaurantArea", ''))` for search.
-   - Unit tests: valid and invalid visit records through `jsonToLex` + `$parse` (rating 0 and 6, an empty name, 5 images, a PNG, a `visitedAt` without an offset).
+   - Unit tests: valid and invalid visit records through `jsonToLex` + `$parse` (rating 0 and 6, an empty name, 5 images, a PNG, a `visitedAt` without an offset), and `drinks` accepted on both a cook and a visit.
    - *Checkpoint A:* stop and show the human the Lexicon JSON (records under it are permanent once the namespace is real) and the migration. Wait for approval before building on it.
 2. **Indexing and sync.**
    - `lib/indexer/visit.ts`: validate, enforce every limit, upsert idempotently (single statement, like cooks), delete. `ensureAccount` first.
@@ -382,10 +392,11 @@ Decided with the human (2026-10-12): a **mixed feed with distinct cards** (not a
    - A `FeedItem` union (`{ kind: "cook" } & CookView` or `{ kind: "visit" } & VisitView`, with kudos/comment counts, `viewerKudos` and, for cooks, `badge`). Following, Global and profile feeds return both, newest first, with the existing `(sortAt, uri)` cursor across both tables (a `UNION ALL` of the two filtered selects, ordered and limited once). A page must stay a fixed number of queries, never one per card: a unit test counts them, as in Phase 6.7.
    - `getVisitDetail`, like `getCookDetail` (kudos list, comments, `viewerKudos`).
    - Every read goes through `visibleAccount`. `/api/feed` returns the union.
-   - **Kept as cooks only:** profile stats ("cooks this week/month"), Best cook and its badges. Their queries don't change.
+   - **Kept as cooks only:** the cook stats ("cooks this week/month"), Best cook and its badges. Their queries don't change.
+   - **Eating-out stats:** per-day visit counts from `visitedLocalDate` over the same window as `getCookDayCounts`, bucketed by the same code (§6.4: weeks start Monday, the author's local calendar, "current" in the viewer's time zone). Fetched with the profile in the same fixed number of queries.
 6. **Design.** Add a second accent pair to the tokens in `app/globals.css`: `out` (terracotta, for the eating-out label and stars) and `out-soft`, light and dark, each text pair checked for WCAG AA against `background` and `surface` before use. Start around `#a8471f` light and `#e8916d` dark, adjusting until they pass. Basil stays the only colour for interactive elements and active kudos (§7). Icon: `UtensilsCrossed` (lucide).
 7. **The visit card** (in every feed, next to cook cards):
-   - The same author row (meal type and time).
+   - The same author row, but with meal type and the **visit's date** (from `visitedLocalDate`: "Today", "Yesterday", or "Tue 14 Oct"), never a relative time like "12m ago" or a clock time.
    - Above the photos or the name, an "Ate out" label: `UtensilsCrossed` plus text in `out`, on `out-soft`, `rounded-full`, small.
    - The photos, the same carousel and crop as cooks.
    - The restaurant name in the display serif where the dish name goes, with the area in `muted` under it.
@@ -393,17 +404,17 @@ Decided with the human (2026-10-12): a **mixed feed with distinct cards** (not a
    - The review cut to 3 lines, then the same `CardActions` (kudos toggle, comments).
 
    It must be obvious at a glance which cards are visits, in light and dark, without reading the label.
-8. **The visit page** (`/visit/[did]/[rkey]`): public like the cook page (same route group and signed-out treatment, link-preview tags, `noindex`). All photos at full aspect ratio, the restaurant and area, the stars, "Visited …" (in the author's offset, like "Cooked …"), the full review, kudos, comments, Share (Post to Bluesky for the author, the native share sheet, copy link) and delete for the author. Not-found and loading states like the cook page.
+8. **The visit page** (`/visit/[did]/[rkey]`): public like the cook page (same route group and signed-out treatment, link-preview tags, `noindex`). All photos at full aspect ratio, the restaurant and area, the stars, "Visited Tue 14 Oct" (the date only, in the author's offset; no time, unlike "Cooked …"), the full review, kudos, comments, Share (Post to Bluesky for the author, the native share sheet, copy link) and delete for the author. Not-found and loading states like the cook page.
 9. **Logging a visit.**
    - The Log screen gets a two-segment switch at the top: **Cooked it | Ate out** (default Cooked it, remembered for the session). Switching keeps the photos, meal type and date.
    - "Ate out" swaps the dish name and note for: restaurant name (required), area (optional), the star rating (required: a `radiogroup` of five 44px star buttons with arrow-key support, labelled "1 star" … "5 stars"), and the review (optional, with a character count near the limit).
    - Submit shows upload progress and keeps the form on failure, exactly as for cooks. On success, open the new visit.
 10. **Search.** Restaurant names and areas match like dish names (case- and accent-insensitive substring, the new trigram index). Results are one mixed list, newest first, with the same cursor; the meal chips filter both kinds; people stay as they are.
-11. **Profile.** The feed shows the person's cooks and visits. The stats stay cook counts, labelled as now.
+11. **Profile.** The feed shows the person's cooks and visits. The cook figures stay as now (big serif numbers). Under them, one smaller line for eating out: `UtensilsCrossed` in `out`, then "Ate out 2 this week · 5 this month" in `muted`. The line only appears when either count is above zero, so profiles of people who don't eat out don't change.
 
 *Tests:*
-- **Unit, against the local Postgres:** the visit indexer (valid, invalid, update, delete, replay is a no-op); kudos and comments on visits, including orphans; the feed union (paging across both kinds with ties on `sortAt`, Following, Global and profile, the denylist, a fixed query count); `viewerKudos` on visits; search across both kinds; stats and Best still ignoring visits; the proxy accepting visit images; a rebuild including visits.
-- **e2e:** extend the fixtures with visits (a winning-looking visit must not appear on the Best tab). Cover: visit cards in feeds, giving kudos on a visit card, the visit page (signed in and signed out), logging a visit (validation, the star control with keyboard, a failure then retry, stubbed writes), deleting a visit, search finding a restaurant, and the "Sign in again" path when the scope is missing. Every existing test keeps passing. Add the visit write routes to the safety net.
+- **Unit, against the local Postgres:** the visit indexer (valid, invalid, update, delete, replay is a no-op); kudos and comments on visits, including orphans; the feed union (paging across both kinds with ties on `sortAt`, Following, Global and profile, the denylist, a fixed query count); `viewerKudos` on visits; search across both kinds; cook stats and Best still ignoring visits; the eating-out counts (bucketing with offsets across midnight UTC, as in §6.4); `drinks` on the Best tab; the proxy accepting visit images; a rebuild including visits.
+- **e2e:** extend the fixtures with visits (a winning-looking visit must not appear on the Best tab). Cover: visit cards in feeds, giving kudos on a visit card, the visit page (signed in and signed out), logging a visit (validation, the star control with keyboard, a failure then retry, stubbed writes), deleting a visit, search finding a restaurant, visit cards and the visit page showing a date and never a time, the eating-out line on a profile (present and absent), and the "Sign in again" path when the scope is missing. Every existing test keeps passing. Add the visit write routes to the safety net.
 
 *Checkpoint B (the end of the phase):*
 - Screenshots at 375px, light and dark: a feed mixing cards, a visit card, the visit page (signed in and out), the Log form in both modes, and search.
@@ -422,7 +433,7 @@ Decided with the human (2026-10-12): a **mixed feed with distinct cards** (not a
 6. Steps 6–8 (tokens, card, visit page), with screenshots. Then step 9 (Log), then steps 10–11.
 7. Extend the e2e fixtures and suite, update SPEC §2/§5/§6/§7, `PROGRESS.md` and `CLAUDE.md`, and stop at checkpoint B.
 
-**Phase 7 — Deployment prep (blocked until the human provides a domain).** Ask the human for the domain. Swap `NS` and `APP_NAME`, regenerate code, and reset the dev database. Publish the Lexicons and a permission set under the real namespace, following current atproto docs. Replace the placeholder icons, and add production OAuth client metadata, Fly configs for both machines (with the Tap volume), the Neon connection and secrets. Also:
+**Phase 7 — Deployment prep (blocked until the human provides a domain).** Ask the human for the domain. Since Phase 6.8 the app covers all the food you eat, not only cooking, so the human plans a broader, food-wide name than "Cooklog" (decided 2026-10-16): confirm the name along with the domain. Swap `NS` and `APP_NAME`, regenerate code, and reset the dev database. Publish the Lexicons and a permission set under the real namespace, following current atproto docs. Replace the placeholder icons, and add production OAuth client metadata, Fly configs for both machines (with the Tap volume), the Neon connection and secrets. Also:
 - set health checks with a startup grace period generous enough that slow boots don't fail deploys;
 - add error logging the human can check from their phone;
 - confirm Neon's restore points are on, and rehearse running migrations against a Neon branch;
