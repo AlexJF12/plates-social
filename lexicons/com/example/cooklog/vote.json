@@ -1,0 +1,23 @@
+{
+  "lexicon": 1,
+  "id": "com.example.cooklog.vote",
+  "defs": {
+    "main": {
+      "type": "record",
+      "description": "A vote from the author for a cook as the best of its month (the cook's month, in its author's calendar). Unlike kudos, votes are scarce: the app counts only each account's 3 earliest votes per month, and ignores votes created after that month has ended.",
+      "key": "tid",
+      "record": {
+        "type": "object",
+        "required": ["subject", "createdAt"],
+        "properties": {
+          "subject": {
+            "type": "ref",
+            "ref": "com.atproto.repo.strongRef",
+            "description": "The cook record being voted for."
+          },
+          "createdAt": { "type": "string", "format": "datetime" }
+        }
+      }
+    }
+  }
+}

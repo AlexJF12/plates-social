@@ -1,5 +1,34 @@
 # Progress
 
+## Phase 6.9 — Monthly votes decide Best — at checkpoint A (Lexicon + migration), waiting for the human
+
+Branch: `feature/phase-6.9` (from main after PR #16). Human-requested 2026-10-24: Best is decided by votes (3 per account per month) instead of kudos; kudos stay unlimited. Spec: §4 `NS.vote` and §8 "Phase 6.9" (the decisions, the rules, steps 1–8, tests, checkpoints).
+
+### Decided with the human (2026-10-24)
+
+Winners stay per meal type with **one pool of 3 votes per month** across categories; **cooks only**; months **before October 2026 keep kudos** winners and badges (`VOTES_FROM = "2026-10"`); **counts hidden while a month is open**; Vote button on the **cook page only**; votes **can be taken back** while the month is open.
+
+### Built (step 1)
+
+- **Lexicon** `NS.vote` (`lexicons/com/example/cooklog/vote.json`): `subject` (strongRef to a cook), `createdAt`, `tid` key. No month or count in the record: the allowance (each voter's 3 earliest counted votes per cook-month, created before the month closed everywhere) is applied on read. `pnpm lex:build`; exported as `vote` from `lib/lexicons.ts`; `COLLECTIONS.vote`. Not in `SCOPE` yet (step 3).
+- **Migration `006_vote`**: `vote` (`uri` PK, `authorDid`, `subjectUri`, `subjectCid`, `createdAt` timestamptz), unique (`authorDid`, `subjectUri`), index on `subjectUri`. `VoteTable` in `lib/db/schema.ts`.
+- **Tests** (`lib/lexicons.test.ts`): a valid vote; rejected: no cid, a non-at-uri subject, no subject, no `createdAt`, a non-datetime `createdAt`.
+
+### Decisions not in the spec
+
+- The Lexicon description states the 3-vote rule, so other clients know extra votes are ignored. If the number might change later, it could say "a few" instead.
+- No index beyond the unique constraint and `subjectUri`: the unique (`authorDid`, `subjectUri`) index already serves a voter's own votes and the purge.
+- A vote's month comes from the cook, so if another client edits a cook's `cookedAt` into another month, its votes move with it. Fine, because the allowance is computed on read.
+
+### Verified (and how)
+
+- `pnpm migrate` applied `006_vote` to the local Postgres (`\d vote` matches). `pnpm test`: **250/250** (244 + 6 vote parse cases). `pnpm typecheck` (after `npx next typegen` in this fresh clone) and `pnpm lint`: clean.
+- Not run yet (later steps): indexing, Tap, PDS writes, UI.
+
+### Next step
+
+Checkpoint A: the human reviews `vote.json` and `006_vote`. After approval, steps 2–3 (indexer, rebuild, scope), as in SPEC §8 Phase 6.9's build order.
+
 ## Phase 6.8 — Eating out (restaurant visits with reviews) — PR #16 open; live PDS/Tap checks passed 2026-10-16
 
 Branch: `feature/phase-6.8` (from main after PR #15). Checkpoint A (Lexicon + migration) approved by the human 2026-10-16. Spec: §2.1, §2.2, §4, §5, §6, §7 updated.
