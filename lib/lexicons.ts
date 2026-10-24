@@ -5,6 +5,7 @@
 export * as cook from "./lexicons-gen/com/example/cooklog/cook";
 export * as visit from "./lexicons-gen/com/example/cooklog/visit";
 export * as kudos from "./lexicons-gen/com/example/cooklog/kudos";
+export * as vote from "./lexicons-gen/com/example/cooklog/vote";
 export * as comment from "./lexicons-gen/com/example/cooklog/comment";
 export * as follow from "./lexicons-gen/com/example/cooklog/follow";
 export * as strongRef from "./lexicons-gen/com/atproto/repo/strongRef";

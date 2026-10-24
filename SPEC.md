@@ -154,6 +154,9 @@ A meal eaten at a restaurant, with a review. The same basic post as a cook, but 
 ### `NS.kudos`
 `subject` (`com.atproto.repo.strongRef` to a cook or a visit, required), `createdAt` (required).
 
+### `NS.vote` (Phase 6.9: monthly votes)
+`subject` (`com.atproto.repo.strongRef` to a **cook**, required), `createdAt` (required). A vote for that cook as the best of its month. Unlike kudos, votes are scarce: the app counts only each account's 3 earliest votes per month and ignores votes created after the month has ended (rules in Phase 6.9). The allowance is applied when reading, so the record carries no month or count.
+
 ### `NS.comment`
 `subject` (`com.atproto.repo.strongRef` to a cook or a visit, required), `text` (1–500 graphemes, required), `createdAt` (required).
 
@@ -440,6 +443,53 @@ Decided with the human (2026-10-16 interview):
 5. Step 5 (the feed union and visit detail) with the query-count and paging tests. This is the riskiest change: every feed goes through it.
 6. Steps 6–8 (tokens, card, visit page), with screenshots. Then step 9 (Log), then steps 10–11.
 7. Extend the e2e fixtures and suite, update SPEC §2/§5/§6/§7, `PROGRESS.md` and `CLAUDE.md`, and stop at checkpoint B.
+
+**Phase 6.9 — Monthly votes decide Best (human-requested, 2026-10-24).** Start on a new branch after the Phase 6.8 PR is merged. Best cook stops meaning "most kudos" and becomes "most votes". Kudos stay as they are: unlimited, a like. On top of that, every account gets **3 votes a month** to give to the cooks it thinks are best, and the most-voted cook in each category wins. This adds one Lexicon (`NS.vote`, §4) and one index table. Votes are copies of PDS records and the allowance is applied on read, never stored, so §0.14 (the index stays rebuildable) holds. When the phase is done, update §2.1, §5, §6 and §7 to match what was built.
+
+Decided with the human (2026-10-24):
+- **Winners stay per meal type** (the seven categories). The 3 votes are **one pool per month across all categories**, and a vote counts in its cook's own category.
+- **Cooks only.** Visits get no Vote button, and votes on visits are ignored.
+- **Months before October 2026 keep their kudos winners and badges.** From October 2026 (`VOTES_FROM = "2026-10"`) only votes decide. The app isn't launched yet, so switching October mid-month changes no real badge, and the human can try voting straight away.
+- **Counts are hidden while a month is open.** Voters see only their own votes. Winners and vote counts appear once the month has ended everywhere (UTC−12, as for badges). Votes are public records on the PDS, so this only hides them in the app.
+- **The Vote button is on the cook page only**, not on feed cards: a vote should take a deliberate tap.
+- **Votes can be taken back while the month is open**, which frees the vote. Once the month closes, the app no longer changes votes.
+
+**The rules, applied when reading (not only in the UI, §0.6):**
+- **Month:** the cook's month, from `cookedLocalDate` (the author's calendar, as for Best and the stats). A vote for a September cook uses September's allowance.
+- **Counted votes:** a vote counts if its voter is visible, the cook is visible and by another visible account (self-votes never count), the cook has a known meal type, its month is ≥ `VOTES_FROM`, and the vote's `createdAt` is before the month ended everywhere (the 1st of the next month, 12:00 UTC). Of those, only each voter's **3 earliest per month** by (`createdAt`, `uri`) count. Extra votes stay in the index but don't count. A vote on a cook that is deleted or hidden no longer counts, so it frees its place.
+- **Score and ties:** the number of counted votes. A cook needs at least 1 to win. Ties go to the earliest `cookedAt`, then the lowest `uri` (as now).
+- `createdAt` is set by the client, so a raw client could backdate a vote into a closed month. That's accepted: an account still never has more than 3 counted votes in a month, and late kudos were already allowed to change past months.
+
+**Not in this phase:** votes on feed cards, votes for visits, showing who voted, live counts or "Leading so far" for vote months, notifications about results, and changing the number of votes.
+
+1. **Lexicon and schema (checkpoint A).**
+   - `lexicons/com/example/cooklog/vote.json` per §4 (`tid` key). `pnpm lex:build`, import only via `lib/lexicons.ts`, add `COLLECTIONS.vote`.
+   - Migration `006_vote` (additive): `vote` (`uri` PK, `authorDid`, `subjectUri`, `subjectCid`, `createdAt` timestamptz), unique (`authorDid`, `subjectUri`) keeping the earliest if duplicates arrive (as for kudos), and an index on `subjectUri`.
+   - Unit tests: valid and invalid vote records through `jsonToLex` + `$parse`.
+   - *Checkpoint A:* show the human the Lexicon JSON (records under it are permanent once the namespace is real) and the migration. Wait for approval before building on it.
+2. **Indexing and sync.** `lib/indexer/vote.ts`, like kudos: `$parse`, the subject must be an `NS.cook` uri (anything else is dropped and logged), `ensureAccount`, an idempotent single-statement upsert, delete, purge on account deletion. Include `vote` in the rebuild script and the README procedure. Tap already delivers `NS.*`. An account that has only voted is discovered through sign-in, as for kudos (§6.1).
+3. **Auth.** Add `repo:NS.vote` to `SCOPE`. Older sessions lack it: voting or taking a vote back returns `403 { reauth: true }` and the UI offers "Sign in again" (`components/reauth.ts`). Everything else keeps working.
+4. **Write routes** (exercise each with curl before building UI on it, §0.9):
+   - `POST /api/vote { cook, rkey }`: signed in; the cook is visible, not yours, has a known meal type, and its month is ≥ `VOTES_FROM` and open (started somewhere, not yet ended everywhere). You must have fewer than 3 counted votes in that month, else `409 { votesLeft: 0 }`. A vote you already have on that cook is a success that returns it. Client TID rkey reused on retry, `$parse` before the PDS, read-your-own-writes upsert.
+   - `DELETE /api/vote { cook }`: takes your vote back while the month is open (`409` once it's closed). A missing record is a success, so it can be retried.
+5. **Reads** (every read through `visibleAccount`):
+   - `getBestCooks` scores months ≥ `VOTES_FROM` by counted votes and earlier months by kudos, with the same output plus which rule decided (`by: "kudos" | "votes"`), still one query per call. A vote month that is still open returns no winners, so counts can't leak through pages or `/api/*`.
+   - `getVoteStatus(viewer, month)`: votes left and the cooks the viewer voted for, in one query. The cook page gets `viewerVote` and the month's `votesLeft` from it.
+   - Badges and the profile's "Best cooks" keep their shape and come from whichever rule applies. `getAuthorBadges`'s month prefilter also looks at cooks with votes.
+6. **The cook page.** Under the kudos section, shown when signed in, the cook isn't yours, it has a known meal type and its month is open for voting: a Vote button (lucide `Vote`), "Vote for best dinner", with "2 of 3 votes left for October" in `muted` under it. Once voted: the selected state, "Voted" (`aria-pressed`), with "Tap again to take it back". With no votes left: the button is disabled, with "You've used your 3 votes for October" and a link to the Best tab where your votes are listed. The same confirm-then-flip behaviour as kudos: pending state, inline error, rkey reused across retries, never a failed write that looks like it worked. Basil, like every control.
+7. **The Best tab.**
+   - **A vote month that is still open:** the status line becomes "Voting closes at the end of October. Results then." There are no leaders and no counts. A "Your votes" section shows "2 of 3 votes left" and one row per cook you voted for (the same row as a winner, with its category), each linking to the cook page, where the vote can be taken back. With no votes yet: a hint to vote from any cook's page, pointing to the global feed.
+   - **A closed vote month:** one row per category as now, with the vote count (`Vote` icon, "5 votes") instead of kudos.
+   - **Kudos months** (before October 2026): unchanged.
+8. **Rules.** No new dependencies. Migrations are additive. Keep the design system (§7), with no one-off sizes or colours. Existing unit and e2e tests must pass.
+
+*Tests:*
+- **Unit, against the local Postgres:** the vote indexer (valid, invalid, a visit or other non-cook subject dropped, replay is a no-op, a duplicate keeps the earliest, delete, purge). The winner query: a 4th vote ignored and the order by `createdAt`; a vote freed when its cook is deleted or hidden; self-votes; hidden voters; votes created after the month closed; each month's allowance separate; one pool across categories; the threshold and ties; kudos deciding before `VOTES_FROM` and votes from it; an open vote month returning no winners; badges and profile wins from both rules. `getVoteStatus`. `/api/vote` against a fake PDS: record fields, retry after a lost response, the allowance `409`, a closed month, your own cook, a visit, an "Other" cook, reauth, `401`, delete and retry.
+- **e2e:** extend the fixtures with votes. Cover: the Vote button states on the cook page (votes left, voted, take back, used up, failure then retry, not shown on your own cook, a visit or a closed month), the open month on the Best tab (no counts, "Your votes"), a closed vote month with counts (if no completed month ≥ `VOTES_FROM` exists yet when this is built, say so at the checkpoint rather than adding a test-only override), and kudos months unchanged. Add `/api/vote` to the safety net.
+
+*Checkpoint B:* screenshots at 375px in light and dark (the cook page's vote states, the Best tab for an open month and a closed one), test, typecheck and lint results, and the end-to-end check (§0.9) with the human's approval: vote on a real cook from another account, `getRecord` it, confirm it arrives through Tap (delete the row and re-add the repo), take it back and confirm it's gone from the PDS and the index. *Done when:* the human has voted and taken a vote back in the installed PWA on a real iPhone (via the tunnel) and approved.
+
+**Build order:** read `CLAUDE.md`, `PROGRESS.md` and this phase; branch `feature/phase-6.9` from main; step 1, then **stop at checkpoint A**; after approval, steps 2–3, then step 4 (with the real `getRecord` round trip), then step 5 with its unit tests, then steps 6–7 with screenshots; then the e2e suite, the spec and handoff updates, and **stop at checkpoint B**.
 
 **Phase 7 — Deployment prep (blocked until the human provides a domain).** Ask the human for the domain. Since Phase 6.8 the app covers all the food you eat, not only cooking, so the human plans a broader, food-wide name than "Cooklog" (decided 2026-10-16): confirm the name along with the domain. Swap `NS` and `APP_NAME`, regenerate code, and reset the dev database. Publish the Lexicons and a permission set under the real namespace, following current atproto docs. Replace the placeholder icons, and add production OAuth client metadata, Fly configs for both machines (with the Tap volume), the Neon connection and secrets. Also:
 - set health checks with a startup grace period generous enough that slow boots don't fail deploys;

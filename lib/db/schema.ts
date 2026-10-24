@@ -11,6 +11,7 @@ export interface DatabaseSchema {
   cook: CookTable;
   visit: VisitTable;
   kudos: KudosTable;
+  vote: VoteTable;
   comment: CommentTable;
   follow: FollowTable;
 }
@@ -94,6 +95,16 @@ export interface VisitTable {
 }
 
 export interface KudosTable {
+  uri: string;
+  authorDid: string;
+  subjectUri: string;
+  subjectCid: string;
+  createdAt: Timestamp;
+}
+
+// A vote for a cook as the best of its month (NS.vote, Phase 6.9). The
+// monthly allowance is applied on read (getBestCooks), never stored.
+export interface VoteTable {
   uri: string;
   authorDid: string;
   subjectUri: string;

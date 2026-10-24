@@ -77,6 +77,7 @@ Always use `127.0.0.1`, not `localhost`: the loopback OAuth redirect is pinned t
 - `out`/`out-soft` (terracotta) mark eating out and displayed stars only; controls (including the star input) stay basil.
 - Writes that need a scope older sessions lack return `403 { reauth: true }`; the UI calls `startReauth(viewerDid, next)` (`components/reauth.ts`).
 - In cloud sessions the e2e global setup's own `chromium.launch()` needs the `/opt/pw-browsers/chromium` path too: patch it locally for the run and revert it (don't commit).
+- In a fresh clone `pnpm typecheck` fails on `PageProps`/`LayoutProps` until Next has generated its route types: run `npx next typegen` (or `pnpm dev` once). In cloud sessions Postgres 16 runs natively (`pg_ctlcluster 16 main start`; create the `cooklog` role and database by hand), there is no Docker.
 
 ---
 

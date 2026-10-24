@@ -1,7 +1,7 @@
 import { jsonToLex } from "@atproto/lex";
 import { describe, expect, it } from "vitest";
 import { COLLECTIONS } from "./config";
-import { comment, cook, follow, kudos, visit } from "./lexicons";
+import { comment, cook, follow, kudos, visit, vote } from "./lexicons";
 
 // Records arrive from Tap as JSON (CIDs as {"$link": ...}), so every fixture
 // goes through jsonToLex before $parse, the same path the webhook will use.
@@ -41,6 +41,7 @@ describe("lexicon ids match NS", () => {
     expect(cook.$type).toBe(COLLECTIONS.cook);
     expect(visit.$type).toBe(COLLECTIONS.visit);
     expect(kudos.$type).toBe(COLLECTIONS.kudos);
+    expect(vote.$type).toBe(COLLECTIONS.vote);
     expect(comment.$type).toBe(COLLECTIONS.comment);
     expect(follow.$type).toBe(COLLECTIONS.follow);
   });
@@ -183,6 +184,30 @@ describe("kudos", () => {
 
   it("rejects a subject without a cid", () => {
     expect(() => parse(kudos, { ...valid, subject: { uri: COOK_URI } })).toThrow();
+  });
+});
+
+describe("vote", () => {
+  const valid = {
+    $type: COLLECTIONS.vote,
+    subject: { uri: COOK_URI, cid: CID },
+    createdAt: "2026-10-24T09:15:00.000Z",
+  };
+
+  it("accepts a valid record", () => {
+    const rec = parse(vote, valid);
+    expect(rec.subject).toEqual({ uri: COOK_URI, cid: CID });
+    expect(rec.createdAt).toBe(valid.createdAt);
+  });
+
+  it.each([
+    ["a subject without a cid", { subject: { uri: COOK_URI } }],
+    ["a subject that isn't an at-uri", { subject: { uri: "https://example.com/cook", cid: CID } }],
+    ["a missing subject", { subject: undefined }],
+    ["a missing createdAt", { createdAt: undefined }],
+    ["a createdAt that isn't a datetime", { createdAt: "yesterday" }],
+  ])("rejects %s", (_name, overrides) => {
+    expect(() => parse(vote, { ...valid, ...overrides })).toThrow();
   });
 });
 

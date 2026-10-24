@@ -259,6 +259,37 @@ const migrations: Record<string, Migration> = {
       await db.schema.dropTable("visit").execute();
     },
   },
+
+  // Monthly votes (Phase 6.9): a copy of NS.vote records (rebuildable from
+  // Tap, §0.14). Which votes count (3 per voter and month, before the month
+  // closes) is decided on read, never stored.
+  "006_vote": {
+    async up(db: Kysely<unknown>) {
+      await db.schema
+        .createTable("vote")
+        .addColumn("uri", "text", (col) => col.primaryKey())
+        .addColumn("authorDid", "text", (col) => col.notNull())
+        .addColumn("subjectUri", "text", (col) => col.notNull())
+        .addColumn("subjectCid", "text", (col) => col.notNull())
+        .addColumn("createdAt", "timestamptz", (col) => col.notNull())
+        // One vote per (voter, cook); also serves a voter's own votes and
+        // purging a deleted account.
+        .addUniqueConstraint("vote_author_subject_unique", [
+          "authorDid",
+          "subjectUri",
+        ])
+        .execute();
+      // Votes per cook (Best).
+      await db.schema
+        .createIndex("vote_subject_idx")
+        .on("vote")
+        .column("subjectUri")
+        .execute();
+    },
+    async down(db: Kysely<unknown>) {
+      await db.schema.dropTable("vote").execute();
+    },
+  },
 };
 
 export function getMigrator() {

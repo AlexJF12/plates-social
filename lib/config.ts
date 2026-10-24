@@ -10,6 +10,7 @@ export const COLLECTIONS = {
   cook: `${NS}.cook`,
   visit: `${NS}.visit`,
   kudos: `${NS}.kudos`,
+  vote: `${NS}.vote`,
   comment: `${NS}.comment`,
   follow: `${NS}.follow`,
 } as const;
